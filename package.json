@@ -1,10 +1,40 @@
 {
   "name": "vsidian-codex-bridge",
-  "private": true,
+  "publisher": "ONEGAYI",
+  "displayName": "Vsidian Codex Bridge",
+  "description": "Vsidian 附加组件：桥接 Codex 生态——粘贴还原（Codex 聊天链接 span 还原为 Markdown 链接）与 Mermaid Codex 主题（亮暗色板、ELK 布局，以渲染提供者身份提供）。",
   "version": "0.1.0",
   "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ONEGAYI/vsidian-codex-bridge.git"
+  },
+  "engines": {
+    "vscode": "^1.82.3"
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "extensionDependencies": [
+    "onegayi.vsidian"
+  ],
+  "keywords": [
+    "vsidian-addon"
+  ],
+  "activationEvents": [],
+  "vsidianAddon": {
+    "manifestVersion": 1,
+    "api": "^1.0.0"
+  },
+  "main": "./dist/extension.js",
   "scripts": {
-    "test": "npm run build && vitest run"
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "compile": "npm run build && npm run typecheck",
+    "test": "npm run build && vitest run",
+    "vendor:sdk": "node scripts/vendorSdkTypes.mjs",
+    "vendor:check": "node scripts/vendorSdkTypes.mjs --check"
   },
   "devDependencies": {
     "@codemirror/language": "6.12.4",
