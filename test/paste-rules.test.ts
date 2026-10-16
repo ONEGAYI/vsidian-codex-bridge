@@ -328,10 +328,18 @@ describe('Codex 粘贴还原规则：宿主入口接线', () => {
 
   it('页面入口不因粘贴规则启用——声明式规则无需页面代码', () => {
     // 规则在宿主登记、广播到页面、在既有 HTML→Markdown 遍历中消费，
-    // 组件无需提供任何页面脚本逻辑；dist/editor.js 空工厂占位（bridge#3
-    // 渲染提供者才需要页面入口）。断言工厂体内无任何 sdk 注册调用。
+    // 粘贴还原无需页面脚本逻辑；#3 起工厂装配主题渲染提供者
+    // （renderers.register 属主题面，不在本契约范围），此处只钉住工厂
+    // 体内无粘贴规则注册——registerRules 归宿主 enable 生命周期。
     const text = readFileSync(path.join(repoRoot, 'src/page-editor.ts'), 'utf8')
-    const factoryBody = text.slice(text.indexOf('defineAddonPage('))
+    // 切片从工厂声明起、到 defineAddonPage 登记调用前止，覆盖完整工厂
+    // 函数体（只从登记调用切片则断言仅剩末尾一行、恒绿）；锚点先断
+    // 在场，防改名后切片静默退化为空串
+    const factoryStart = text.indexOf('export function codexPageFactory')
+    const registerCall = text.indexOf('defineAddonPage(')
+    expect(factoryStart, 'page-editor.ts 应声明 codexPageFactory').toBeGreaterThanOrEqual(0)
+    expect(registerCall, 'page-editor.ts 应有 defineAddonPage 登记调用').toBeGreaterThan(factoryStart)
+    const factoryBody = text.slice(factoryStart, registerCall)
     expect(factoryBody).not.toMatch(/\b_sdk?\.[a-zA-Z]+/)
     expect(factoryBody).not.toContain('registerRules')
   })

@@ -2,7 +2,9 @@
 // ONEGAYI/vsidian 迁移（test/integration/testHost.mjs@301d2c16 的 spawn
 // 包装节选——openReport/writeReportAll/resolveTestHostMode/runTestHost
 // 原样保留原始注释，未迁移上游专有的便携分片/多根工作区/集成报告
-// 判定函数）。
+// 判定函数）。与上游留两处微差：writeReportAll 的 writeSync 显式传第
+// 四参 length（上游为三参调用）；runTestHost 默认 timeoutMs 由上游
+// 15min 收紧为 5min——run.mjs 调用处显式传值，默认值无实际影响。
 //
 // 通道形态：Windows 经 powershell 包装 hiddenDesktop.ps1（Base64 配置，
 // windowsHide），VSCode 宿主起在独立窗口站+桌面（用户桌面不可见、剪贴板

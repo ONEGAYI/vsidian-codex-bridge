@@ -32,7 +32,6 @@ vsidian-codex-bridge/
 ├── docs/adr/                  # 架构决策记录（0001 脚手架 / 0002 粘贴还原 / 0003 Mermaid 主题 / 0004 发布与分发）
 ├── scripts/
 │   ├── vendorSdkTypes.mjs     # SDK 类型快照生成/校验（锚定 vsidian@301d2c16；npm run vendor:sdk / vendor:check）
-│   ├── vendorSdkTypes.d.mts   # 上者编译期类型声明（同仓先例：工具脚本不进 tsconfig include）
 │   ├── release.mjs            # VSIX 打包 + 内容/体积红线 + manifest 冒烟（票 #4；npm run package，无上传路径）
 │   └── release.d.mts          # 上者编译期类型声明（契约测试消费面）
 ├── src/
