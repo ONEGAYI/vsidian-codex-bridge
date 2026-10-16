@@ -7,7 +7,7 @@
 //   onDispose 退订（对齐 T07 主题夹具消费形态）。
 import { describe, expect, it, vi } from 'vitest'
 import { ADDON_ID, CODEX_RENDERER_ID, CODEX_THEME_DECLARATION } from '../src/codex/meta'
-import { addonDefinition } from '../src/extension'
+import { codexEnable } from '../src/codex/host-enable'
 import { codexPageFactory } from '../src/page-editor'
 
 describe('Codex 主题元数据（单一事实源）', () => {
@@ -43,7 +43,7 @@ describe('宿主 enable：themes.register 登记', () => {
 
   it('登记编辑器页入口 + Codex 主题元数据（整批一条）', () => {
     const ctx = mockEnableCtx()
-    addonDefinition.enable!(ctx as never)
+    codexEnable(ctx as never)
     expect(ctx.pages.registerEditor).toHaveBeenCalledWith({ entry: 'dist/editor.js' })
     expect(ctx.themes.register).toHaveBeenCalledTimes(1)
     expect(ctx.themes.register).toHaveBeenCalledWith([CODEX_THEME_DECLARATION])
@@ -52,7 +52,7 @@ describe('宿主 enable：themes.register 登记', () => {
   it('themes.register 普通拒绝（invalid-theme 等）不抛——不算组件故障', () => {
     const ctx = mockEnableCtx()
     ctx.themes.register = vi.fn(() => ({ ok: false as const, reason: 'invalid-theme', dispose: () => {} }))
-    expect(() => addonDefinition.enable!(ctx as never)).not.toThrow()
+    expect(() => codexEnable(ctx as never)).not.toThrow()
   })
 })
 
