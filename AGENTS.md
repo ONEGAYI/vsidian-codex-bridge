@@ -27,16 +27,18 @@ vsidian-codex-bridge/
 ├── package.json               # 含 vsidianAddon 清单声明（manifestVersion 1 / api ^1.0.0，零 experimental）
 ├── tsconfig.json              # tsc --noEmit 类型检查（esbuild 不查类型）
 ├── vitest.config.ts           # 单元层测试配置（node 环境）
-├── docs/adr/                  # 架构决策记录（0001：脚手架构建与 vendor 快照）
+├── docs/adr/                  # 架构决策记录（0001：脚手架构建与 vendor 快照；0002：粘贴还原 href 口径与属性形态兼容）
 ├── scripts/
 │   └── vendorSdkTypes.mjs     # SDK 类型快照生成/校验（锚定 vsidian@301d2c16；npm run vendor:sdk / vendor:check）
 ├── src/
-│   ├── extension.ts           # 宿主入口：registerAddon 两段生命周期（bridge#2/#3 在此扩展）
+│   ├── extension.ts           # 宿主入口：registerAddon 两段生命周期（bridge#2 粘贴还原已接入，bridge#3 在此扩展）
+│   ├── paste-rules.ts         # Codex 粘贴还原规则声明（纯数据）+ enable 生命周期注册（票 #2，口径见 docs/adr/0002）
 │   ├── page-editor.ts         # 编辑器页 IIFE 占位入口（bridge#3 渲染提供者在此扩展）
 │   ├── host-api.ts            # 宿主导出 API 最小声明（registerAddon 面）
 │   └── vsidian-addon-sdk.d.ts # 虚拟模块 vsidian-addon-sdk 的 ambient 类型声明
 ├── test/
-│   └── scaffold.test.ts       # 脚手架结构契约（manifest / vendor 纪律 / 目录 / 导入纪律 / 产物形态）
+│   ├── scaffold.test.ts       # 脚手架结构契约（manifest / vendor 纪律 / 目录 / 导入纪律 / 产物形态）
+│   └── paste-rules.test.ts    # Codex 粘贴还原契约（票 #2：纯数据 / 识别面 / 产出形态 / 预算 / 注册行为）
 ├── tools/
 │   ├── buildLib.mjs           # 构建库：页面 IIFE + 宿主 CJS + 产物静态扫描
 │   ├── sdkBridge.mjs          # SDK 构建桥（虚拟模块注入 + CM6 值导入拒绝）

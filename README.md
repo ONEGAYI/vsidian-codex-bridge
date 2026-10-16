@@ -6,14 +6,14 @@
 
 | 能力 | 说明 | 上游依赖 |
 | --- | --- | --- |
-| 粘贴还原 | Codex 聊天剪贴板里的 `data-prompt-link-*` span 还原为标准 Markdown 链接，修复「保留格式粘贴把链接改写为 `\[...\](...)` 字面文本」 | [vsidian#530](https://github.com/ONEGAYI/vsidian/issues/530) 粘贴转换扩展点 API（**已落地**） |
+| 粘贴还原（**已实现**，票 #2） | Codex 聊天剪贴板里的 `data-prompt-link-*` span 还原为标准 Markdown 链接，修复「保留格式粘贴把链接改写为 `\[...\](...)` 字面文本」；识别票面当前形态（label + href 双属性）与上游历史变体（单 url 属性），href 口径随宿主（空格 `%20` / 明文 `:行号` 透传，见 [ADR-0002](docs/adr/0002-粘贴还原href产出口径与属性形态兼容.md)） | [vsidian#530](https://github.com/ONEGAYI/vsidian/issues/530) 粘贴转换扩展点 API（**已落地**） |
 | Mermaid Codex 主题 | 以渲染提供者提供 Codex 预设（亮暗色板、ELK 布局、六类图型），替代内核内置实现 | [vsidian#533](https://github.com/ONEGAYI/vsidian/issues/533) 主题预设注册与明暗状态 API（**已落地**）、[vsidian#535](https://github.com/ONEGAYI/vsidian/issues/535) 内核退役（反向等待本组件） |
 
 普通链接尾部 `:行号` 的解析（md 与非 md 目标）已定案进 Vsidian 本体（[vsidian#534](https://github.com/ONEGAYI/vsidian/issues/534)），不在本组件范围。
 
 ## 状态
 
-**实施期**——上游 API 已落地：粘贴转换（#530）与主题注册（#533 / T07）已完成，2026-10-16 batch-2 PR #564 合入 vsidian main@`301d2c16`（T01–T07 全部在内，T08/`#535` 内核退役未实施）；T01–T07 虽已合入 main，仍待用户整体验收，API 处候选期、形状可能调整。实施顺序：#1 脚手架 → #2 粘贴还原 → #3 Mermaid Codex 主题，#4 CI/发布穿插；#3 被 vsidian#535 反向等待（其交付后内核才退役内置 Codex 主题）。组件不在场时 Vsidian 完全可用（回落内置转换与 default 主题）。
+**实施期**——上游 API 已落地：粘贴转换（#530）与主题注册（#533 / T07）已完成，2026-10-16 batch-2 PR #564 合入 vsidian main@`301d2c16`（T01–T07 全部在内，T08/`#535` 内核退役未实施）；T01–T07 虽已合入 main，仍待用户整体验收，API 处候选期、形状可能调整。实施顺序：#1 脚手架（完成）→ #2 粘贴还原（**已实现，待验收**，决策见 [ADR-0002](docs/adr/0002-粘贴还原href产出口径与属性形态兼容.md)）→ #3 Mermaid Codex 主题，#4 CI/发布穿插；#3 被 vsidian#535 反向等待（其交付后内核才退役内置 Codex 主题）。组件不在场时 Vsidian 完全可用（回落内置转换与 default 主题）。
 
 ## 实施决策（已按推荐先行，待追认）
 
