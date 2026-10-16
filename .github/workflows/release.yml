@@ -81,6 +81,10 @@ jobs:
     if: ${{ !cancelled() && vars.MARKETPLACE_PUBLISH == 'true' && ((github.event_name == 'push' && needs.release.result == 'success') || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # secrets 不能出现在任何层级的 if（step 级同样不允许，actionlint 实证）；
+    # 经 env 映射后以 env.VSCE_PAT 判定——官方文档的间接标准做法
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
     steps:
       - uses: actions/setup-node@v5
         with:
@@ -91,12 +95,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release download "${{ inputs.tag || github.ref_name }}" --pattern '*.vsix' -R "$GITHUB_REPOSITORY"
       - name: 发布到 VSCode Marketplace
-        if: ${{ secrets.VSCE_PAT != '' }}
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        if: ${{ env.VSCE_PAT != '' }}
         run: npx --yes @vscode/vsce publish --no-dependencies --packagePath ./*.vsix
       - name: 跳过发布（VSCE_PAT 未配置）
-        if: ${{ secrets.VSCE_PAT == '' }}
+        if: ${{ env.VSCE_PAT == '' }}
         run: echo "::warning::VSCE_PAT 未配置，跳过 Marketplace 发布（GitHub Release 已产出）；配置后可用 workflow_dispatch 补跑"
 
 # 重解析触发：v0.1.0 幽灵 run 后强制注册刷新（见上方踩坑注释）

@@ -111,10 +111,13 @@ describe('Release 工作流结构契约', () => {
     expect(marketplaceJobIf).toBeDefined()
     expect(marketplaceJobIf).not.toContain('secrets')
     expect(text).toMatch(/vars\.MARKETPLACE_PUBLISH == 'true'/)
-    // secrets 双开关下沉到发布 step 的 if，并保留未配置时的显式跳过说明
-    expect(text).toMatch(/if: \$\{\{ secrets\.VSCE_PAT != '' \}\}/)
-    expect(text).toMatch(/if: \$\{\{ secrets\.VSCE_PAT == '' \}\}/)
+    // secrets 双开关经 job 级 env 映射、发布/跳过 step 以 env.VSCE_PAT 判定
+    expect(text).toMatch(/if: \$\{\{ env\.VSCE_PAT != '' \}\}/)
+    expect(text).toMatch(/if: \$\{\{ env\.VSCE_PAT == '' \}\}/)
     expect(text).toMatch(/VSCE_PAT:\s*\$\{\{ secrets\.VSCE_PAT \}\}/)
+    // 任何层级的 if 都不得直接引用 secrets（job/step 均不允许，actionlint 实证）
+    const ifLines = text.match(/^\s*if: .+$/gm) ?? []
+    for (const line of ifLines) expect(line).not.toContain('secrets')
   })
 
   it('dispatch 补跑豁免：!cancelled() 绕过上游 release job 的 skipped', () => {
