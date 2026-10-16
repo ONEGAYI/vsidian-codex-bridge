@@ -102,10 +102,18 @@ describe('Release 工作流结构契约', () => {
     expect(text).toContain('VSIDIAN_SOURCE_REPO:')
   })
 
-  it('Marketplace 双开关代码化：MARKETPLACE_PUBLISH 变量与 VSCE_PAT 密钥都配置才执行', () => {
+  it('Marketplace 双开关分层：vars 留在 job if，secrets 只出现在 step 级（平台限制）', () => {
     const text = readFileSync(releaseWorkflowPath, 'utf8')
+    // GitHub Actions 硬限制：job 级 if 不可用 secrets context（unrecognized
+    // named-value → workflow 无效 → 空 job failure，v0.1.0 首推事故实录）
+    const jobIfs = text.match(/^    if: .+$/gm) ?? []
+    const marketplaceJobIf = jobIfs.find((line) => line.includes('MARKETPLACE_PUBLISH'))
+    expect(marketplaceJobIf).toBeDefined()
+    expect(marketplaceJobIf).not.toContain('secrets')
     expect(text).toMatch(/vars\.MARKETPLACE_PUBLISH == 'true'/)
-    expect(text).toMatch(/secrets\.VSCE_PAT != ''/)
+    // secrets 双开关下沉到发布 step 的 if，并保留未配置时的显式跳过说明
+    expect(text).toMatch(/if: \$\{\{ secrets\.VSCE_PAT != '' \}\}/)
+    expect(text).toMatch(/if: \$\{\{ secrets\.VSCE_PAT == '' \}\}/)
     expect(text).toMatch(/VSCE_PAT:\s*\$\{\{ secrets\.VSCE_PAT \}\}/)
   })
 
