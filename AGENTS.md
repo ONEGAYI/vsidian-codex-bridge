@@ -5,7 +5,7 @@
 1. **粘贴还原**：识别 Codex 聊天剪贴板里的 `data-prompt-link-*` span，还原为标准 Markdown 链接（上游粘贴转换扩展点 API，宿主侧 `enableCtx.paste.registerRules`）；
 2. **Mermaid Codex 主题**：以渲染提供者身份重新提供 Codex 预设（亮暗色板、ELK 布局、六类图型），宿主侧 `enableCtx.themes.register` 登记元数据 + 页面侧 `sdk.renderers.register` 执行渲染。
 
-> 状态：**实施期**。上游 API 已落地并发行——粘贴转换（[vsidian#530](https://github.com/ONEGAYI/vsidian/issues/530)）与主题注册（[vsidian#533](https://github.com/ONEGAYI/vsidian/issues/533) / T07）已完成，2026-10-16 batch-2 PR #564 合入 vsidian main@`301d2c16` 后，上游随本体 1.1.0 发行附加组件 API 1.1.0（vendor 类型快照经首次显式 re-vendor 锚定发行提交 `80dfc285`，candidate 面全量转正、无破坏性变更；T01–T07 仍待用户整体验收）。实施顺序：**#1（脚手架）→ #2（粘贴还原）→ #3（Mermaid Codex 主题）→ #4（发布与分发）**——四票均已实施（#2 见 docs/adr/0002，#3 见 docs/adr/0003，#4 见 docs/adr/0004：VSIX 打包链与内容红线、CI 工作流、真宿主安装验证、安装升级文档），多项 `pending-decision` 按推荐先行待追认；#4 渠道决策已于 2026-10-16 经用户决策升级为**双通道自动发布**（GitHub Release + Marketplace 双开关，release.yml 推 `v*` 标签触发，见 docs/adr/0004 决策一变更）。#3 被 [vsidian#535](https://github.com/ONEGAYI/vsidian/issues/535)（T08 内核 Codex 退役）反向等待（其前置的可安装 VSIX 与真宿主安装验证已随 #4 交付）。
+> 状态：**实施期**。上游 API 已落地并发行——粘贴转换（[vsidian#530](https://github.com/ONEGAYI/vsidian/issues/530)）与主题注册（[vsidian#533](https://github.com/ONEGAYI/vsidian/issues/533) / T07）已完成，2026-10-16 batch-2 PR #564 合入 vsidian main@`301d2c16` 后，上游随本体 1.1.0 发行附加组件 API 1.1.0（vendor 类型快照经首次显式 re-vendor 锚定发行提交 `80dfc285`，candidate 面全量转正、无破坏性变更；T01–T07 仍待用户整体验收）。实施顺序：**#1（脚手架）→ #2（粘贴还原）→ #3（Mermaid Codex 主题）→ #4（发布与分发）**——四票均已实施（#2 见 docs/adr/0002，#3 见 docs/adr/0003，#4 见 docs/adr/0004：VSIX 打包链与内容红线、CI 工作流、真宿主安装验证、安装升级文档），多项 `pending-decision` 按推荐先行待追认；#4 渠道决策已于 2026-10-16 经用户决策升级为**双通道自动发布**（GitHub Release + Marketplace 双开关，publish.yml 推 `v*` 标签触发，见 docs/adr/0004 决策一变更）。#3 被 [vsidian#535](https://github.com/ONEGAYI/vsidian/issues/535)（T08 内核 Codex 退役）反向等待（其前置的可安装 VSIX 与真宿主安装验证已随 #4 交付）。
 
 ## 约定
 
@@ -30,7 +30,7 @@ vsidian-codex-bridge/
 ├── tsconfig.json              # tsc --noEmit 类型检查（esbuild 不查类型）
 ├── vitest.config.ts           # 单元层测试配置（node 环境 + vsidian-addon-sdk 测试 shim 别名）
 ├── .github/workflows/ci.yml   # CI：npm ci → compile → test → vendor:check → VSIX 打包上传（票 #4）
-├── .github/workflows/release.yml # 发布：推 v* 标签创建 Release 附 VSIX + Marketplace 双开关自动发布
+├── .github/workflows/publish.yml # 发布：推 v* 标签创建 Release 附 VSIX + Marketplace 双开关自动发布
 ├── docs/adr/                  # 架构决策记录（0001 脚手架 / 0002 粘贴还原 / 0003 Mermaid 主题 / 0004 发布与分发）
 ├── scripts/
 │   ├── vendorSdkTypes.mjs     # SDK 类型快照生成/校验（锚定 vsidian@80dfc285，API 1.1.0 发行；npm run vendor:sdk / vendor:check）

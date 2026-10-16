@@ -3,7 +3,7 @@
 // manifest 冒烟口径、CHANGELOG 最新版本段提取（Release notes 来源）、
 // 发布前置校验（tag 命中 / GH_TOKEN / Release 不覆盖）。主流程（spawn
 // vsce / gh / PowerShell 读 zip）不在此测：跨进程 IO 归 `npm run package`
-// 端到端与 release.yml 工作流承载（真实产物实测）。另钉两组仓库现状
+// 端到端与 publish.yml 工作流承载（真实产物实测）。另钉两组仓库现状
 // 契约：.vscodeignore 排除清单（黑名单输入侧；产物输出侧由禁止模式钉住）
 // 与发布护栏（真实发布通道的保护语义——发布只允许经显式 release 子命令
 // 在精确命中 v<version> 标签、环境齐备、Release 不存在时执行）。形态对齐

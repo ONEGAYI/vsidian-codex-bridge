@@ -14,7 +14,7 @@ import path from 'node:path'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const workflowPath = path.join(repoRoot, '.github/workflows/ci.yml')
-const releaseWorkflowPath = path.join(repoRoot, '.github/workflows/release.yml')
+const releaseWorkflowPath = path.join(repoRoot, '.github/workflows/publish.yml')
 
 describe('CI 工作流结构契约', () => {
   it('workflow 文件在场', () => {
@@ -57,7 +57,7 @@ describe('CI 工作流结构契约', () => {
 })
 
 // 发布工作流结构契约（发布链路升级，2026-10-16 用户决策：GitHub Release +
-// VSCode Marketplace 双通道自动发布）：钉住 .github/workflows/release.yml 的
+// VSCode Marketplace 双通道自动发布）：钉住 .github/workflows/publish.yml 的
 // 触发（推 v* 标签 + dispatch 补跑）、双 job 分工与 Marketplace 双开关。
 // 形态照搬上游 vsidian 主仓 release.yml，适配点：发布前复验步骤换本仓对应
 // 物（vendor:check + 源仓获取，同 ci.yml 方式）；双开关（secrets.VSCE_PAT +
@@ -65,7 +65,7 @@ describe('CI 工作流结构契约', () => {
 
 describe('Release 工作流结构契约', () => {
   it('workflow 文件在场', () => {
-    expect(existsSync(releaseWorkflowPath), '.github/workflows/release.yml 缺失').toBe(true)
+    expect(existsSync(releaseWorkflowPath), '.github/workflows/publish.yml 缺失').toBe(true)
   })
 
   it('推 v* 标签触发 + workflow_dispatch 补跑入口（tag 输入）', () => {
