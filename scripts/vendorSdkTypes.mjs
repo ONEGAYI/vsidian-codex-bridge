@@ -16,8 +16,10 @@
 // - 每个文件头标注来源 commit；升级快照 = 改 DEFAULT_COMMIT 重跑 + 评审 diff。
 // - 生成模式原子替换：全部产物先写 types/.vendor-staging-*/（每次调用
 //   mkdtempSync 独立），写满后整体 rename 换入 types/vendor/（换入失败
-//   回滚；换入/回滚段经 types/.vendor-lock 锁目录跨进程互斥），中途异常
-//   不破坏已提交快照，并发生成互不删除对方的暂存/备份目录。
+//   回滚；换入/回滚段经 types/.vendor-lock 锁目录跨进程互斥，锁不做
+//   陈旧自动回收——超时报错提示人工处置），中途异常不破坏已提交快照，
+//   并发生成互不删除对方的暂存/备份目录；回滚也失败时唯一旧快照备份
+//   保留现场，错误信息报出备份路径供人工恢复。
 //
 // 与 easy-typing 的入口表差异：锚定 batch-2 合入点（PR #564），补入
 // addonPasteRules.ts（#541/#542 粘贴规则，bridge#2 直接消费）与
@@ -377,7 +379,12 @@ function isSubset(small, big) {
 
 // ---------------------------------------------------------------- 输出/校验
 
-const outDir = path.join(repoRoot, 'types', 'vendor')
+/** 测试钩子（test/vendor-swap.test.ts 子进程注入；生产不设环境变量即无
+ *  任何行为变化）：types 目录基址重定向——行为测试在临时 types 根上做
+ *  换入/回滚/锁语义，不触碰仓库真实快照。 */
+const typesRoot = process.env.VENDOR_TEST_TYPES_ROOT ?? path.join(repoRoot, 'types')
+
+const outDir = path.join(typesRoot, 'vendor')
 const toOutPath = (srcPath) => path.join(outDir, srcPath.replace(/^src\//, ''))
 
 function collectExistingFiles(dir, base = dir) {
@@ -414,15 +421,37 @@ async function waitResumeSignal() {
 
 /** 换入/回滚互斥锁目录（mkdir 原子性 = 跨进程互斥；.gitignore 的
  *  「.vendor-*」通配已覆盖）。 */
-const swapLockDir = path.join(repoRoot, 'types', '.vendor-lock')
-/** 持有超此时长视为陈旧锁（持有进程崩溃残留），可移除后重试获取 */
-const SWAP_LOCK_STALE_MS = 120_000
-/** 获取锁的最长等待（正常一轮换入是毫秒级，超时说明对端真挂了） */
-const SWAP_LOCK_WAIT_MS = 60_000
+const swapLockDir = path.join(typesRoot, '.vendor-lock')
+/** 获取锁的最长等待（正常一轮换入是毫秒级，超时说明对端真挂了或异常
+ *  残留）。测试钩子 VENDOR_TEST_SWAP_LOCK_WAIT_MS 可缩短（行为测试不
+ *  真等 60s）。 */
+const SWAP_LOCK_WAIT_MS = Number(process.env.VENDOR_TEST_SWAP_LOCK_WAIT_MS ?? 60_000)
 
 /** 换入临界段互斥：并发生成进程的「换出旧快照 → 换入新快照 → 清备份」
  *  rename 序列必须整体互斥，否则对端 rmSync(prev) 可能删掉本端换出中
- *  的备份（旧快照永久丢失）。陈旧锁按持有时长判定移除。 */
+ *  的备份（旧快照永久丢失）。
+ *  锁语义（PR #5 二轮复审 P2）：不做陈旧锁自动回收——按 mtime 判陈旧
+ *  再删除存在竞态：读到旧 stat 与执行删除之间，锁可能已被人工处理或
+ *  他者重新取得，旧 stat 不能证明删除时该路径仍是原陈旧锁（实证会删
+ *  掉新持有者的活锁、双进程双双进入临界段破坏互斥）。re-vendor 是低频
+ *  手动操作，安全优先于自动恢复：锁存在即等待，超时明确报错提示人工
+ *  恢复，绝不按 mtime 自动删除。 */
+/** 测试钩子（生产不设环境变量即无任何行为变化）：VENDOR_TEST_FAIL_SWAP
+ *  = 逗号分隔的换入阶段序号（0 = 换入 staging→vendor，1 = 回滚
+ *  prev→vendor），命中阶段以 code=EPERM 抛错——按真实 rename 故障形态
+ *  注入，验证换入/回滚失败路径的数据保护行为。 */
+const failSwapPhases = new Set((process.env.VENDOR_TEST_FAIL_SWAP ?? '').split(',').filter(Boolean))
+let swapRenameSeq = 0
+function swapRename(from, to) {
+  const phase = String(swapRenameSeq++)
+  if (failSwapPhases.has(phase)) {
+    const err = new Error(`EPERM: operation not permitted, rename '${from}' -> '${to}'（VENDOR_TEST_FAIL_SWAP 阶段 ${phase} 注入）`)
+    err.code = 'EPERM'
+    throw err
+  }
+  return renameSync(from, to)
+}
+
 async function withSwapLock(critical) {
   const deadline = Date.now() + SWAP_LOCK_WAIT_MS
   for (;;) {
@@ -431,15 +460,12 @@ async function withSwapLock(critical) {
       break // 拿到锁（mkdir 的原子性保证唯一持有者）
     } catch (err) {
       if (err.code !== 'EEXIST') throw err
-      const stat = statSync(swapLockDir, { throwIfNoEntry: false })
-      if (stat && Date.now() - stat.mtimeMs > SWAP_LOCK_STALE_MS) {
-        rmSync(swapLockDir, { recursive: true, force: true }) // 崩溃残留：移除重试
-        continue
-      }
+      // 锁被他者持有或为异常残留：只等待，绝不自动删除（见上方锁语义
+      // 注释——按 mtime 抢占会删掉新持有者的活锁）
       if (Date.now() > deadline) {
         throw new Error(
-          `等待 vendor 快照换入锁超时（${SWAP_LOCK_WAIT_MS / 1000}s）：${swapLockDir} 被其他生成进程持有且未释放；` +
-            '若确认无并发生成在跑，可删除该锁目录后重试',
+          `等待 vendor 快照换入锁超时（${SWAP_LOCK_WAIT_MS / 1000}s）：${swapLockDir} 被其他生成进程持有或为异常残留（锁不会被自动删除）。` +
+            '请确认无并发生成在跑后，人工删除该锁目录再重试',
         )
       }
       await new Promise((resolve) => setTimeout(resolve, 100))
@@ -459,8 +485,9 @@ async function writeGenerated() {
   // 换入/回滚段经锁目录互斥——固定目录会被并发另一轮生成无条件 rmSync：
   // 暂存被删则本轮产物缺文件、备份被删则回滚把旧快照永久丢掉（审查实证
   // 退出码全 0 但快照缺首个暂存文件）。锁内不触碰其他调用的目录树。
-  const staging = mkdtempSync(path.join(repoRoot, 'types', '.vendor-staging-'))
+  const staging = mkdtempSync(path.join(typesRoot, '.vendor-staging-'))
   let prev = null
+  let keepPrevForRecovery = false
   let created = 0
   let updated = 0
   try {
@@ -481,15 +508,28 @@ async function writeGenerated() {
       const hadExisting = !!statSync(outDir, { throwIfNoEntry: false })
       if (hadExisting) {
         // 备份目录独立创建（mkdtemp 后删除占位再用：rename 要求目标不存在）
-        prev = mkdtempSync(path.join(repoRoot, 'types', '.vendor-prev-'))
+        prev = mkdtempSync(path.join(typesRoot, '.vendor-prev-'))
         rmSync(prev, { recursive: true, force: true })
         renameSync(outDir, prev)
       }
       try {
-        renameSync(staging, outDir)
-      } catch (err) {
-        if (prev) renameSync(prev, outDir) // 换入失败：回滚换出，恢复原快照
-        throw err
+        swapRename(staging, outDir)
+      } catch (swapErr) {
+        if (!prev) throw swapErr
+        try {
+          swapRename(prev, outDir) // 换入失败：回滚换出，恢复原快照
+        } catch (rollbackErr) {
+          // 回滚也失败（PR #5 二轮复审 P2）：此刻 prev 是唯一完整旧快照，
+          // 绝不能随 finally 清理——保留现场并把两个原始错误与恢复路径
+          // 一起报出，交人工恢复
+          keepPrevForRecovery = true
+          throw new Error(
+            `换入与回滚均失败：旧快照已完整保留在备份目录 ${prev}（恢复前请勿删除）。` +
+              `换入错误：${swapErr.message}；回滚错误：${rollbackErr.message}。` +
+              `请人工恢复：核对无误后将该备份目录 rename 回 ${outDir}`,
+          )
+        }
+        throw swapErr // 回滚成功：原快照已复位，仍如实报出本轮换入失败
       }
       if (prev) {
         rmSync(prev, { recursive: true, force: true })
@@ -498,9 +538,10 @@ async function writeGenerated() {
     })
   } finally {
     // 正常路径 staging 已被 rename 走或尚未写入；仅写入/换入阶段失败时
-    // 残留的**本调用**暂存/备份在此清理（独立目录，不影响其他调用）
+    // 残留的**本调用**暂存/备份在此清理（独立目录，不影响其他调用）。
+    // 例外：回滚失败的 prev 是唯一完整旧快照，保留现场供人工恢复
     rmSync(staging, { recursive: true, force: true })
-    if (prev) rmSync(prev, { recursive: true, force: true })
+    if (prev && !keepPrevForRecovery) rmSync(prev, { recursive: true, force: true })
   }
   const rootedList = [...rooted.keys()].map((p) => p.replace(/^src\//, ''))
   console.log(`[vendor] 生成 ${created} 个 / 覆盖 ${updated} 个文件到 types/vendor/（锚定 ONEGAYI/vsidian@${commit.slice(0, 8)}）`)

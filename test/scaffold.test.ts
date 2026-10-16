@@ -126,7 +126,10 @@ describe('vendor SDK 类型快照纪律（锚定 vsidian@301d2c16）', () => {
     // rename 整体换入、失败保留原快照的替换路径
     const text = readFileSync(path.join(repoRoot, 'scripts/vendorSdkTypes.mjs'), 'utf8')
     expect(text, '生成模式不得先删原快照目录').not.toMatch(/rmSync\(outDir/)
-    expect(text, '缺少暂存目录整体换入（renameSync(staging, outDir)）').toContain('renameSync(staging, outDir)')
+    // 换入调用经 swapRename 包装（测试钩子 VENDOR_TEST_FAIL_SWAP 注入点，
+    // 生产不设环境变量即原样 renameSync）——契约钉包装调用名
+    expect(text, '缺少暂存目录整体换入（swapRename(staging, outDir)）').toContain('swapRename(staging, outDir)')
+    expect(text, '换入/回滚须走真实 renameSync（钩子未注入时）').toMatch(/return renameSync\(from, to\)/)
   })
 
   it('生成模式并发隔离（PR #5 审查 P2）：暂存/备份目录每次调用独立 + 换入互斥锁', () => {
