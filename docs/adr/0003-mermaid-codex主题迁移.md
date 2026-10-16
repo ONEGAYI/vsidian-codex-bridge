@@ -29,6 +29,7 @@
 
 - `npm install && npm run compile && npm test`：71 用例全绿（色板 27 + 运行时 6 + 渲染器 12 + 登记 7 + 加载器 4 + 脚手架 15）；`npm run vendor:check` 快照一致（26 文件，锚定 301d2c16）。日志：`D:\CODE\Project\_ForExplore\vsidian-codex-bridge-scaffold\mermaid-logs\full-pipeline.log`。
 - 浏览器层冒烟（真实 Chromium 装载 dist 产物，17 项全过）：esm 分块装载、流程图 + 六类图型 × 亮暗渲染、暗色填充生效、frontmatter 覆盖、导出背景烘焙。日志：同目录 `browser-smoke.log`。Playwright 借用 vsidian 主仓 node_modules 与浏览器缓存（本仓不引重依赖，`VSIDIAN_SOURCE_REPO` 可指路）。
+- PR #5 审查修复轮（2026-10-16）：全量 137 用例（新增真实 mermaid 回归 9 + 队列时序 3 + ESM 防线 4 + 并发隔离契约 1 + 静默宿主行为契约扩充）、vendor 并发夹具红→绿、浏览器冒烟 17 项、宿主四层经静默通道复验——日志 `release-logs/prfix-*.log`。
 
 ## 已知边界与未尽事项
 
