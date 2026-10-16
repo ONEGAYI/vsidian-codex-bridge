@@ -92,3 +92,5 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: npx --yes @vscode/vsce publish --no-dependencies --packagePath ./*.vsix
+
+# 重解析触发：v0.1.0 幽灵 run 后强制注册刷新（见上方踩坑注释）
