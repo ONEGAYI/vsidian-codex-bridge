@@ -4,7 +4,7 @@
 // 产物扫描（无 vsidian 内部路径 / 裸 require / CM6 运行时标记）。
 // 构建通过即扫描通过——「npm run build」即双防线入口。
 import { build } from 'esbuild'
-import { cpSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createSdkBridgePlugin } from './sdkBridge.mjs'
@@ -28,8 +28,10 @@ export const INTERNAL_PATH_MARKERS = [
 /**
  * 产物静态扫描（验收：产物无内部路径导入、裸 require 或重复 CM6）。
  * - page（浏览器 IIFE）：不得含任何 require( 调用（自包含）；
- * - host（扩展宿主 CJS）：仅允许 require('vscode')（engines 依赖，external）。
- * 两种产物都不得含 CM6 运行时标记与内部路径标记。
+ * - host（扩展宿主 CJS）：仅允许 require('vscode')（engines 依赖，external）；
+ * - esm（浏览器模块产物，<script type="module"> 装载）：require 边界不
+ *   适用（模块依赖走 import 语句与动态分块引用），CM6 与内部路径标记照扫。
+ * 所有产物都不得含 CM6 运行时标记与内部路径标记。
  */
 export function scanArtifact(productPath, kind) {
   const text = readFileSync(productPath, 'utf8')
@@ -42,6 +44,9 @@ export function scanArtifact(productPath, kind) {
     if (text.includes(marker)) {
       throw new Error(`${productPath} 含 vsidian 内部路径标记「${marker}」——本插件不得导入 Vsidian 内部代码或 vendor 值代码`)
     }
+  }
+  if (kind === 'esm') {
+    return
   }
   const requires = [...text.matchAll(/require\(\s*(['"])([^'"]*)\1\s*\)/g)].map((m) => m[2])
   if (kind === 'page' && requires.length > 0) {
@@ -59,14 +64,19 @@ export function scanArtifact(productPath, kind) {
  * 构建本插件。页面入口（编辑器页）打成 chrome114 IIFE（对齐下界
  * 宿主 1.82.3 = Electron 25 / Chromium 114，经 SDK 构建桥解析虚拟模块
  * vsidian-addon-sdk 并拒绝 @codemirror/* 值导入）；宿主入口打成 node18
- * CJS（external vscode）。src/ 下的 .css 随页面拷入 dist/。逐产物扫描。
+ * CJS（external vscode）。esmModules 是浏览器模块产物（esm + splitting，
+ * 动态 import 分块按需加载——IIFE 不支持 code splitting，故独立产物经
+ * resourceUri + <script type="module"> 装载；形态对齐上游 out/webview/
+ * mermaid.js 独立产物）。src/ 下的 .css 随页面拷入 dist/。逐产物扫描。
  *
  * @param {object} input
  * @param {Array<{ entry: string, out: string }>} input.pages 页面入口（相对仓库根）
  * @param {string} input.host 宿主入口（相对仓库根，产物固定 dist/extension.js）
+ * @param {Array<{ entry: string, name: string }>} [input.esmModules] 模块产物
+ *   入口（相对仓库根）与产物名：dist/<name>.js + dist/<name>-chunks/
  * @param {(message: string) => void} [input.log]
  */
-export async function buildAddon({ pages, host, log = console.log }) {
+export async function buildAddon({ pages, host, esmModules = [], log = console.log }) {
   const distDir = path.join(repoRoot, 'dist')
   mkdirSync(distDir, { recursive: true })
   const sdkBridge = createSdkBridgePlugin()
@@ -87,6 +97,32 @@ export async function buildAddon({ pages, host, log = console.log }) {
     })
     scanArtifact(outfile, 'page')
     log(`[build] 页面 ${page.entry} -> ${page.out}（${statSync(outfile).size} B，扫描通过）`)
+  }
+  for (const module of esmModules) {
+    // 构建前清旧分块目录：chunk 文件名带内容散列，不清会残留上一轮散列
+    // 块进 VSIX（上游 esbuild.mjs 同款纪律）
+    const chunksDir = path.join(distDir, `${module.name}-chunks`)
+    rmSync(chunksDir, { recursive: true, force: true })
+    await build({
+      entryPoints: [path.join(repoRoot, module.entry)],
+      outdir: distDir,
+      entryNames: module.name,
+      chunkNames: `${module.name}-chunks/[name]-[hash]`,
+      bundle: true,
+      format: 'esm',
+      splitting: true,
+      platform: 'browser',
+      target: 'chrome114',
+      minify: true,
+      sourcemap: false,
+      logLevel: 'silent',
+    })
+    const outfile = path.join(distDir, `${module.name}.js`)
+    scanArtifact(outfile, 'esm')
+    const chunkCount = existsSync(chunksDir)
+      ? readdirSync(chunksDir).filter((f) => f.endsWith('.js')).length
+      : 0
+    log(`[build] 模块 ${module.entry} -> dist/${module.name}.js + ${chunkCount} 分块（${statSync(outfile).size} B，扫描通过）`)
   }
   const hostOut = path.join(repoRoot, 'dist', 'extension.js')
   await build({

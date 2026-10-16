@@ -33,11 +33,16 @@ describe('Codex 主题元数据（单一事实源）', () => {
 describe('宿主 enable：themes.register 登记', () => {
   function mockEnableCtx() {
     return {
-      pages: { registerEditor: vi.fn(() => ({ dispose: () => {} })) },
+      pages: { registerEditor: vi.fn((_entry: unknown) => ({ dispose: () => {} })) },
       themes: {
-        register: vi.fn(() => ({ ok: true as const, dispose: () => {} })),
+        register: vi.fn(
+          (_declarations: readonly unknown[]): { ok: boolean; reason?: string; dispose(): void } => ({
+            ok: true,
+            dispose: () => {},
+          }),
+        ),
       },
-      onDispose: vi.fn(),
+      onDispose: vi.fn((_cb: () => void) => {}),
     }
   }
 
@@ -51,7 +56,13 @@ describe('宿主 enable：themes.register 登记', () => {
 
   it('themes.register 普通拒绝（invalid-theme 等）不抛——不算组件故障', () => {
     const ctx = mockEnableCtx()
-    ctx.themes.register = vi.fn(() => ({ ok: false as const, reason: 'invalid-theme', dispose: () => {} }))
+    ctx.themes.register = vi.fn(
+      (_declarations: readonly unknown[]): { ok: boolean; reason?: string; dispose(): void } => ({
+        ok: false,
+        reason: 'invalid-theme',
+        dispose: () => {},
+      }),
+    )
     expect(() => codexEnable(ctx as never)).not.toThrow()
   })
 })
@@ -60,13 +71,13 @@ describe('页面工厂：renderers.register + themeEnvironment 装配', () => {
   function mockSdk() {
     return {
       addon: { id: ADDON_ID, generation: 1, page: 'editor' as const },
-      renderers: { register: vi.fn(() => ({ dispose: () => {} })) },
+      renderers: { register: vi.fn((_spec: unknown) => ({ dispose: () => {} })) },
       themeEnvironment: {
         get: vi.fn(() => ({ dark: false, highContrast: false })),
-        onChange: vi.fn(() => () => {}),
+        onChange: vi.fn((_cb: (env: { dark: boolean; highContrast: boolean }) => void) => () => {}),
       },
-      onDispose: vi.fn(),
-      resourceUri: vi.fn(() => 'vscode-webview-resource://test/dist/mermaid.js'),
+      onDispose: vi.fn((_cb: () => void) => {}),
+      resourceUri: vi.fn((_relativePath: string) => 'vscode-webview-resource://test/dist/mermaid.js'),
     }
   }
 
@@ -74,7 +85,7 @@ describe('页面工厂：renderers.register + themeEnvironment 装配', () => {
     const sdk = mockSdk()
     codexPageFactory(sdk as never)
     expect(sdk.renderers.register).toHaveBeenCalledTimes(1)
-    const spec = sdk.renderers.register.mock.calls[0][0] as Record<string, unknown>
+    const spec = sdk.renderers.register.mock.calls[0]![0] as Record<string, unknown>
     expect(spec.rendererId).toBe(CODEX_RENDERER_ID)
     expect(spec.languages).toEqual(['mermaid'])
     expect(spec.modes).toEqual(['live', 'reading'])
@@ -92,7 +103,7 @@ describe('页面工厂：renderers.register + themeEnvironment 装配', () => {
     const sdk = mockSdk()
     codexPageFactory(sdk as never)
     expect(sdk.themeEnvironment.onChange).toHaveBeenCalledTimes(1)
-    expect(typeof sdk.themeEnvironment.onChange.mock.calls[0][0]).toBe('function')
+    expect(typeof sdk.themeEnvironment.onChange.mock.calls[0]![0]).toBe('function')
     expect(sdk.onDispose).toHaveBeenCalled()
   })
 
