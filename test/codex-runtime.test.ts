@@ -74,8 +74,9 @@ describe('createCodexMermaidApi：图内显式配置优先（源码透传）', (
     api.initialize(BASE)
     await api.render('id-4', 'mindmap\n  root((r))', false)
     const calls = (mermaid.initialize as ReturnType<typeof vi.fn>).mock.calls
-    expect(calls.length).toBe(1)
-    expect(calls[0][0]).toEqual(BASE)
+    // setup 一次 + render 恢复一次，共两次——无第三次叠加调用
+    expect(calls.length).toBe(2)
+    expect(calls[1][0]).toEqual(BASE)
   })
 
   it('initialize 更新站点配置基线：后续 render 恢复的是最新基线', async () => {
@@ -86,7 +87,8 @@ describe('createCodexMermaidApi：图内显式配置优先（源码透传）', (
     api.initialize(next)
     await api.render('id-5', 'flowchart TD\nA-->B', false)
     const calls = (mermaid.initialize as ReturnType<typeof vi.fn>).mock.calls
-    expect(calls[0][0]).toEqual(next)
+    // render 恢复的是最新基线（calls[0]/[1] 是两次 setup）
+    expect(calls[2][0]).toEqual(next)
   })
 
   it('render 返回 mermaid 的 svg 产物', async () => {
