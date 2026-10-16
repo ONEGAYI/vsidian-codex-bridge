@@ -128,6 +128,21 @@ describe('vendor SDK 类型快照纪律（锚定 vsidian@301d2c16）', () => {
     expect(text, '生成模式不得先删原快照目录').not.toMatch(/rmSync\(outDir/)
     expect(text, '缺少暂存目录整体换入（renameSync(staging, outDir)）').toContain('renameSync(staging, outDir)')
   })
+
+  it('生成模式并发隔离（PR #5 审查 P2）：暂存/备份目录每次调用独立 + 换入互斥锁', () => {
+    // 固定名 .vendor-staging/.vendor-prev 被并发另一轮生成无条件 rmSync：
+    // 暂存被删则本轮产物缺文件、备份被删则回滚把旧快照永久丢掉（审查
+    // 实证两进程退出码全 0 但快照缺文件）。行为验证走可执行夹具
+    // test/fixtures/vendorConcurrency.mjs（真实源仓），此处钉文本契约防回潮
+    const text = readFileSync(path.join(repoRoot, 'scripts/vendorSdkTypes.mjs'), 'utf8')
+    expect(text, '暂存目录须独立（mkdtempSync，不得固定名共享）').toContain('mkdtempSync')
+    expect(text, '固定暂存名回潮（并发删除窗口）').not.toContain("'.vendor-staging'")
+    expect(text, '固定备份名回潮（回滚丢失窗口）').not.toContain("'.vendor-prev'")
+    expect(text, '换入临界段缺互斥锁目录').toContain('withSwapLock')
+    expect(text, '锁获取须走 mkdir 原子性（EEXIST 即他者持有）').toContain("mkdirSync(swapLockDir, { recursive: false })")
+    // 并发夹具在场（npm test 不跑——依赖真实源仓，验证期手动执行）
+    expect(existsSync(path.join(repoRoot, 'test/fixtures/vendorConcurrency.mjs')), '并发夹具缺失').toBe(true)
+  })
 })
 
 describe('目录结构契约（脚手架主体在场）', () => {

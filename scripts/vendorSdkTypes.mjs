@@ -14,8 +14,10 @@
 // - 产物按 vsidian 源码目录结构镜像到 types/vendor/（去掉 src/ 前缀），
 //   文件相对导入路径原样有效，无需改写。
 // - 每个文件头标注来源 commit；升级快照 = 改 DEFAULT_COMMIT 重跑 + 评审 diff。
-// - 生成模式原子替换：全部产物先写 types/.vendor-staging/，写满后整体
-//   rename 换入 types/vendor/（换入失败回滚），中途异常不破坏已提交快照。
+// - 生成模式原子替换：全部产物先写 types/.vendor-staging-*/（每次调用
+//   mkdtempSync 独立），写满后整体 rename 换入 types/vendor/（换入失败
+//   回滚；换入/回滚段经 types/.vendor-lock 锁目录跨进程互斥），中途异常
+//   不破坏已提交快照，并发生成互不删除对方的暂存/备份目录。
 //
 // 与 easy-typing 的入口表差异：锚定 batch-2 合入点（PR #564），补入
 // addonPasteRules.ts（#541/#542 粘贴规则，bridge#2 直接消费）与
@@ -27,7 +29,7 @@
 // 按提交快照取文，不受源仓工作树状态影响。
 import ts from 'typescript'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -393,6 +395,120 @@ const generated = new Map()
 for (const [p, text] of full) generated.set(p.replace(/^src\//, ''), text)
 for (const [p, info] of rooted) generated.set(p.replace(/^src\//, ''), info.text)
 
+/** 并发回归夹具钩子（test/fixtures/vendorConcurrency.mjs 消费；生产不设
+ *  环境变量即无任何行为变化）：写完首个暂存文件后落 staged-waiting 标记
+ *  并轮询等待 go 信号文件出现——构造「A 暂停、B 完整成功、恢复 A」的
+ *  并发窗口（PR #5 审查 P2 的复现形态）。 */
+const pauseFlagDir = process.env.VENDOR_TEST_PAUSE_AFTER_FIRST_FILE ?? null
+
+async function waitResumeSignal() {
+  writeFileSync(path.join(pauseFlagDir, 'staged-waiting'), String(process.pid))
+  const goFlag = path.join(pauseFlagDir, 'go')
+  for (;;) {
+    if (statSync(goFlag, { throwIfNoEntry: false })) return
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+}
+
+// ------------------------------- 并发隔离（PR #5 审查 P2 修复）
+
+/** 换入/回滚互斥锁目录（mkdir 原子性 = 跨进程互斥；.gitignore 的
+ *  「.vendor-*」通配已覆盖）。 */
+const swapLockDir = path.join(repoRoot, 'types', '.vendor-lock')
+/** 持有超此时长视为陈旧锁（持有进程崩溃残留），可移除后重试获取 */
+const SWAP_LOCK_STALE_MS = 120_000
+/** 获取锁的最长等待（正常一轮换入是毫秒级，超时说明对端真挂了） */
+const SWAP_LOCK_WAIT_MS = 60_000
+
+/** 换入临界段互斥：并发生成进程的「换出旧快照 → 换入新快照 → 清备份」
+ *  rename 序列必须整体互斥，否则对端 rmSync(prev) 可能删掉本端换出中
+ *  的备份（旧快照永久丢失）。陈旧锁按持有时长判定移除。 */
+async function withSwapLock(critical) {
+  const deadline = Date.now() + SWAP_LOCK_WAIT_MS
+  for (;;) {
+    try {
+      mkdirSync(swapLockDir, { recursive: false })
+      break // 拿到锁（mkdir 的原子性保证唯一持有者）
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err
+      const stat = statSync(swapLockDir, { throwIfNoEntry: false })
+      if (stat && Date.now() - stat.mtimeMs > SWAP_LOCK_STALE_MS) {
+        rmSync(swapLockDir, { recursive: true, force: true }) // 崩溃残留：移除重试
+        continue
+      }
+      if (Date.now() > deadline) {
+        throw new Error(
+          `等待 vendor 快照换入锁超时（${SWAP_LOCK_WAIT_MS / 1000}s）：${swapLockDir} 被其他生成进程持有且未释放；` +
+            '若确认无并发生成在跑，可删除该锁目录后重试',
+        )
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+  }
+  try {
+    return await critical()
+  } finally {
+    rmSync(swapLockDir, { recursive: true, force: true })
+  }
+}
+
+async function writeGenerated() {
+  // 原子替换（评审 P2）+ 并发隔离（PR #5 审查 P2）：全部产物先写 staging
+  // 目录，写满后整体 rename 换入；换入失败先回滚换出，原快照目录在任何
+  // 失败路径下保持不动。暂存与备份目录**每次调用独立**（mkdtempSync），
+  // 换入/回滚段经锁目录互斥——固定目录会被并发另一轮生成无条件 rmSync：
+  // 暂存被删则本轮产物缺文件、备份被删则回滚把旧快照永久丢掉（审查实证
+  // 退出码全 0 但快照缺首个暂存文件）。锁内不触碰其他调用的目录树。
+  const staging = mkdtempSync(path.join(repoRoot, 'types', '.vendor-staging-'))
+  let prev = null
+  let created = 0
+  let updated = 0
+  try {
+    let pausedOnce = false
+    for (const [rel, text] of [...generated.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      const outPath = path.join(staging, rel)
+      mkdirSync(path.dirname(outPath), { recursive: true })
+      // 新建/覆盖计数以原快照目录在场与否判定（staging 恒为全新文件）
+      if (statSync(path.join(outDir, rel), { throwIfNoEntry: false })) updated++
+      else created++
+      writeFileSync(outPath, text)
+      if (pauseFlagDir && !pausedOnce) {
+        pausedOnce = true
+        await waitResumeSignal()
+      }
+    }
+    await withSwapLock(() => {
+      const hadExisting = !!statSync(outDir, { throwIfNoEntry: false })
+      if (hadExisting) {
+        // 备份目录独立创建（mkdtemp 后删除占位再用：rename 要求目标不存在）
+        prev = mkdtempSync(path.join(repoRoot, 'types', '.vendor-prev-'))
+        rmSync(prev, { recursive: true, force: true })
+        renameSync(outDir, prev)
+      }
+      try {
+        renameSync(staging, outDir)
+      } catch (err) {
+        if (prev) renameSync(prev, outDir) // 换入失败：回滚换出，恢复原快照
+        throw err
+      }
+      if (prev) {
+        rmSync(prev, { recursive: true, force: true })
+        prev = null
+      }
+    })
+  } finally {
+    // 正常路径 staging 已被 rename 走或尚未写入；仅写入/换入阶段失败时
+    // 残留的**本调用**暂存/备份在此清理（独立目录，不影响其他调用）
+    rmSync(staging, { recursive: true, force: true })
+    if (prev) rmSync(prev, { recursive: true, force: true })
+  }
+  const rootedList = [...rooted.keys()].map((p) => p.replace(/^src\//, ''))
+  console.log(`[vendor] 生成 ${created} 个 / 覆盖 ${updated} 个文件到 types/vendor/（锚定 ONEGAYI/vsidian@${commit.slice(0, 8)}）`)
+  console.log(`[vendor] 完整面 ${full.size} 个；最小闭包 ${rooted.size} 个：${rootedList.join('、') || '无'}`)
+}
+
+// ---------------------------------------------------------------- 入口
+
 if (args.check) {
   const existing = collectExistingFiles(outDir)
   const problems = []
@@ -414,39 +530,5 @@ if (args.check) {
   }
   console.log(`[vendor:check] 快照一致：${generated.size} 个文件，锚定 ONEGAYI/vsidian@${commit.slice(0, 8)}`)
 } else {
-  // 原子替换（评审 P2）：不再「先 rmSync 快照目录再逐个写入」——那样写入
-  // 中途失败（磁盘满/变换异常）会把已提交快照破坏成半成品，vendor:check
-  // 与评审 diff 失去稳定基线。改为全部产物先写 staging 目录，写满后整体
-  // rename 换入；换入失败先回滚换出，原快照目录在任何失败路径下保持不动。
-  const staging = path.join(repoRoot, 'types', '.vendor-staging')
-  const prev = path.join(repoRoot, 'types', '.vendor-prev')
-  rmSync(staging, { recursive: true, force: true })
-  rmSync(prev, { recursive: true, force: true })
-  let created = 0
-  let updated = 0
-  try {
-    for (const [rel, text] of [...generated.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-      const outPath = path.join(staging, rel)
-      mkdirSync(path.dirname(outPath), { recursive: true })
-      // 新建/覆盖计数以原快照目录在场与否判定（staging 恒为全新文件）
-      if (statSync(path.join(outDir, rel), { throwIfNoEntry: false })) updated++
-      else created++
-      writeFileSync(outPath, text)
-    }
-    const hadExisting = !!statSync(outDir, { throwIfNoEntry: false })
-    if (hadExisting) renameSync(outDir, prev)
-    try {
-      renameSync(staging, outDir)
-    } catch (err) {
-      if (hadExisting) renameSync(prev, outDir) // 换入失败：回滚换出，恢复原快照
-      throw err
-    }
-    rmSync(prev, { recursive: true, force: true })
-  } finally {
-    // 正常路径 staging 已被 rename 走或尚未写入；仅写入阶段失败时残留在此清理
-    rmSync(staging, { recursive: true, force: true })
-  }
-  const rootedList = [...rooted.keys()].map((p) => p.replace(/^src\//, ''))
-  console.log(`[vendor] 生成 ${created} 个 / 覆盖 ${updated} 个文件到 types/vendor/（锚定 ONEGAYI/vsidian@${commit.slice(0, 8)}）`)
-  console.log(`[vendor] 完整面 ${full.size} 个；最小闭包 ${rooted.size} 个：${rootedList.join('、') || '无'}`)
+  await writeGenerated()
 }
