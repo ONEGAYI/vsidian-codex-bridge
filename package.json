@@ -1,0 +1,19 @@
+{
+  "name": "vsidian-codex-bridge",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "scripts": {
+    "test": "npm run build && vitest run"
+  },
+  "devDependencies": {
+    "@codemirror/language": "6.12.4",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.13",
+    "@types/node": "22.20.4",
+    "@types/vscode": "1.82.0",
+    "esbuild": "0.28.2",
+    "typescript": "6.0.3",
+    "vitest": "5.0.1"
+  }
+}
