@@ -14,6 +14,8 @@
 // - 产物按 vsidian 源码目录结构镜像到 types/vendor/（去掉 src/ 前缀），
 //   文件相对导入路径原样有效，无需改写。
 // - 每个文件头标注来源 commit；升级快照 = 改 DEFAULT_COMMIT 重跑 + 评审 diff。
+// - 生成模式原子替换：全部产物先写 types/.vendor-staging/，写满后整体
+//   rename 换入 types/vendor/（换入失败回滚），中途异常不破坏已提交快照。
 //
 // 与 easy-typing 的入口表差异：锚定 batch-2 合入点（PR #564），补入
 // addonPasteRules.ts（#541/#542 粘贴规则，bridge#2 直接消费）与
@@ -25,7 +27,7 @@
 // 按提交快照取文，不受源仓工作树状态影响。
 import ts from 'typescript'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -412,15 +414,37 @@ if (args.check) {
   }
   console.log(`[vendor:check] 快照一致：${generated.size} 个文件，锚定 ONEGAYI/vsidian@${commit.slice(0, 8)}`)
 } else {
-  rmSync(outDir, { recursive: true, force: true })
+  // 原子替换（评审 P2）：不再「先 rmSync 快照目录再逐个写入」——那样写入
+  // 中途失败（磁盘满/变换异常）会把已提交快照破坏成半成品，vendor:check
+  // 与评审 diff 失去稳定基线。改为全部产物先写 staging 目录，写满后整体
+  // rename 换入；换入失败先回滚换出，原快照目录在任何失败路径下保持不动。
+  const staging = path.join(repoRoot, 'types', '.vendor-staging')
+  const prev = path.join(repoRoot, 'types', '.vendor-prev')
+  rmSync(staging, { recursive: true, force: true })
+  rmSync(prev, { recursive: true, force: true })
   let created = 0
   let updated = 0
-  for (const [rel, text] of [...generated.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-    const outPath = path.join(outDir, rel)
-    mkdirSync(path.dirname(outPath), { recursive: true })
-    const existed = statSync(outPath, { throwIfNoEntry: false })
-    writeFileSync(outPath, text)
-    existed ? updated++ : created++
+  try {
+    for (const [rel, text] of [...generated.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      const outPath = path.join(staging, rel)
+      mkdirSync(path.dirname(outPath), { recursive: true })
+      // 新建/覆盖计数以原快照目录在场与否判定（staging 恒为全新文件）
+      if (statSync(path.join(outDir, rel), { throwIfNoEntry: false })) updated++
+      else created++
+      writeFileSync(outPath, text)
+    }
+    const hadExisting = !!statSync(outDir, { throwIfNoEntry: false })
+    if (hadExisting) renameSync(outDir, prev)
+    try {
+      renameSync(staging, outDir)
+    } catch (err) {
+      if (hadExisting) renameSync(prev, outDir) // 换入失败：回滚换出，恢复原快照
+      throw err
+    }
+    rmSync(prev, { recursive: true, force: true })
+  } finally {
+    // 正常路径 staging 已被 rename 走或尚未写入；仅写入阶段失败时残留在此清理
+    rmSync(staging, { recursive: true, force: true })
   }
   const rootedList = [...rooted.keys()].map((p) => p.replace(/^src\//, ''))
   console.log(`[vendor] 生成 ${created} 个 / 覆盖 ${updated} 个文件到 types/vendor/（锚定 ONEGAYI/vsidian@${commit.slice(0, 8)}）`)

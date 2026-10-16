@@ -1,0 +1,18 @@
+# 行尾策略（票 #1 评审项）：文本源码与生成产物一律 LF 入库。
+# 当前全部 blob 已是 LF，本策略零重写；作用是钉住跨平台行为——
+# Windows core.autocrlf=true 环境下 checkout/commit 不再产生行尾摇摆。
+* text=auto
+
+# 代码与清单：checkout 也恒为 LF（编辑器与工具链均兼容 LF）。
+*.ts text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+
+# vendor 类型快照显式兜底：生成器恒写 LF，vendor:check 虽做行尾归一比对，
+# 但 checkout 也保持 LF 可令裸跑 vendor 系命令时工作树与产物字节一致，
+# git blob 层面不因行尾归一产生伪变更。
+types/vendor/** text eol=lf
+
+# 本文件自身也恒 LF（规则文件按行解析，行尾无语义，统一免困惑）。
+.gitattributes text eol=lf

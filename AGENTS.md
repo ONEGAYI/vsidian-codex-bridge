@@ -5,7 +5,7 @@
 1. **粘贴还原**：识别 Codex 聊天剪贴板里的 `data-prompt-link-*` span，还原为标准 Markdown 链接（上游粘贴转换扩展点 API，宿主侧 `enableCtx.paste.registerRules`）；
 2. **Mermaid Codex 主题**：以渲染提供者身份重新提供 Codex 预设（亮暗色板、ELK 布局、六类图型），宿主侧 `enableCtx.themes.register` 登记元数据 + 页面侧 `sdk.renderers.register` 执行渲染。
 
-> 状态：**实施期**。上游 API 已落地——粘贴转换（[vsidian#530](https://github.com/ONEGAYI/vsidian/issues/530)）与主题注册（[vsidian#533](https://github.com/ONEGAYI/vsidian/issues/533) / T07）已完成，2026-10-16 batch-2 PR #564 合入 vsidian main@`301d2c16`；vendor 类型快照锚定该提交。实施顺序：**#1（脚手架）→ #2（粘贴还原）→ #3（Mermaid Codex 主题）**，#4（CI/发布）穿插——#2 依赖已就绪、#3 依赖已就绪且被 [vsidian#535](https://github.com/ONEGAYI/vsidian/issues/535)（T08 内核 Codex 退役）反向等待。脚手架三项选型按推荐先行、待用户追认（清单见 README「实施决策（待追认）」与 docs/adr/0001）。
+> 状态：**实施期**。上游 API 已落地——粘贴转换（[vsidian#530](https://github.com/ONEGAYI/vsidian/issues/530)）与主题注册（[vsidian#533](https://github.com/ONEGAYI/vsidian/issues/533) / T07）已完成，2026-10-16 batch-2 PR #564 合入 vsidian main@`301d2c16`（T01–T07 已合入但待用户整体验收，API 处候选期形状可能调整）；vendor 类型快照锚定该提交。实施顺序：**#1（脚手架）→ #2（粘贴还原）→ #3（Mermaid Codex 主题）**，#4（CI/发布）穿插——#2 依赖已就绪、#3 依赖已就绪且被 [vsidian#535](https://github.com/ONEGAYI/vsidian/issues/535)（T08 内核 Codex 退役）反向等待。脚手架三项选型按推荐先行、待用户追认（清单见 README「实施决策（待追认）」与 docs/adr/0001）。
 
 ## 约定
 

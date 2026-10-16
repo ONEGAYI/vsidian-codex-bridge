@@ -118,6 +118,16 @@ describe('vendor SDK 类型快照纪律（锚定 vsidian@301d2c16）', () => {
     // 头注释定位序声称的默认语义与代码同源
     expect(text).toContain(`> ../vscode-obsidian-like-editor`)
   })
+
+  it('生成模式原子替换：全部产物先写暂存目录再整体换入', () => {
+    // 同上钉文本契约：生成分支不得「先 rmSync 快照目录再逐个写入」——
+    // 写入中途失败（磁盘满/变换异常）会把已提交快照破坏成半成品，
+    // vendor:check 与评审 diff 都失去稳定基线；要求 staging 写满 +
+    // rename 整体换入、失败保留原快照的替换路径
+    const text = readFileSync(path.join(repoRoot, 'scripts/vendorSdkTypes.mjs'), 'utf8')
+    expect(text, '生成模式不得先删原快照目录').not.toMatch(/rmSync\(outDir/)
+    expect(text, '缺少暂存目录整体换入（renameSync(staging, outDir)）').toContain('renameSync(staging, outDir)')
+  })
 })
 
 describe('目录结构契约（脚手架主体在场）', () => {
@@ -175,12 +185,20 @@ describe('源码导入纪律（构建桥第一道防线的测试侧镜像）', (
 })
 
 describe('构建产物形态（npm test 内置先构建）', () => {
+  // 直调 vitest（npx vitest run）且未先构建时，缺产物不是契约失败而是前置
+  // 步骤缺失——附明确提示避免误报为构建链回归；npm test 先构建不受影响
+  const distHint = '（dist/ 不在场：请先运行 npm run compile，或使用 npm test——其内置先构建）'
+
   it('双产物在场：宿主 CJS + 页面 IIFE', () => {
-    expect(existsSync(path.join(repoRoot, 'dist/extension.js')), 'dist/extension.js 缺失').toBe(true)
-    expect(existsSync(path.join(repoRoot, 'dist/editor.js')), 'dist/editor.js 缺失').toBe(true)
+    expect(existsSync(path.join(repoRoot, 'dist/extension.js')), `dist/extension.js 缺失${distHint}`).toBe(true)
+    expect(existsSync(path.join(repoRoot, 'dist/editor.js')), `dist/editor.js 缺失${distHint}`).toBe(true)
   })
 
   it('宿主产物仅 require vscode；页面产物零 require', () => {
+    // 本用例直接读产物内容，缺产物时 ENOENT 堆栈难定位——先在场断言给提示
+    for (const rel of ['dist/extension.js', 'dist/editor.js']) {
+      expect(existsSync(path.join(repoRoot, rel)), `${rel} 缺失${distHint}`).toBe(true)
+    }
     const extractRequires = (rel: string): string[] => {
       const text = readFileSync(path.join(repoRoot, rel), 'utf8')
       return [...text.matchAll(/require\(\s*(['"])([^'"]*)\1\s*\)/g)].map((m) => m[2])
