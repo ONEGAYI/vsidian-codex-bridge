@@ -207,4 +207,27 @@ describe('构建产物形态（npm test 内置先构建）', () => {
     expect(hostRequires.every((id) => id === 'vscode'), `宿主产物含 vscode 之外的裸 require：${hostRequires.join(', ')}`).toBe(true)
     expect(extractRequires('dist/editor.js'), '页面产物须为自包含 IIFE（零 require）').toEqual([])
   })
+
+  it('Mermaid 独立 esm 产物在场：dist/mermaid.js + mermaid-chunks/ 分块', () => {
+    expect(existsSync(path.join(repoRoot, 'dist/mermaid.js')), `dist/mermaid.js 缺失${distHint}`).toBe(true)
+    const chunksDir = path.join(repoRoot, 'dist/mermaid-chunks')
+    expect(existsSync(chunksDir), `dist/mermaid-chunks/ 缺失${distHint}`).toBe(true)
+    const chunks = existsSync(chunksDir) ? readdirSync(chunksDir).filter((f) => f.endsWith('.js')) : []
+    // esm+splitting：图类型与 ELK 引擎按需分块（对齐上游 out/webview/mermaid-chunks 形态）
+    expect(chunks.length, 'mermaid 分块目录为空——splitting 未生效').toBeGreaterThan(0)
+    const entry = readFileSync(path.join(repoRoot, 'dist/mermaid.js'), 'utf8')
+    expect(entry, 'mermaid.js 应为 esm 产物（含 import/export 语法）').toMatch(/\bimport\b|\bexport\b/)
+  })
+
+  it('主产物不内联 Mermaid：editor.js / extension.js 无 Codex 色板与 ELK 标记', () => {
+    // 分块懒加载决策（ADR-0003）：mermaid 只进独立 esm 产物；主页面 IIFE
+    // 与宿主 CJS 内联约 2.7MB 运行时会让每次页面装载都付解析成本
+    for (const rel of ['dist/editor.js', 'dist/extension.js']) {
+      expect(existsSync(path.join(repoRoot, rel)), `${rel} 缺失${distHint}`).toBe(true)
+      const text = readFileSync(path.join(repoRoot, rel), 'utf8')
+      expect(text, `${rel} 内联了 ELK 布局配置`).not.toContain('LINEAR_SEGMENTS')
+      expect(text, `${rel} 内联了 Codex 色板值`).not.toContain('#1a283d')
+      expect(text, `${rel} 内联了 mermaid 运行时`).not.toContain('registerLayoutLoaders')
+    }
+  })
 })
