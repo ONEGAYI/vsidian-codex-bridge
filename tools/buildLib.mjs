@@ -69,9 +69,15 @@ export function scanArtifact(productPath, kind) {
  * resourceUri + <script type="module"> 装载；形态对齐上游 out/webview/
  * mermaid.js 独立产物）。src/ 下的 .css 随页面拷入 dist/。逐产物扫描。
  *
+ * esm 产物与页面 IIFE **同受两道防线约束**（PR #5 审查 P2 修复）：
+ * 构建桥插件同样挂载（CM6 值导入从分块混入也在 resolve 期被拒），
+ * CM6 运行时标记与内部路径标记扫描逐一覆盖入口与**全部分块** JS——
+ * 旧实现分块只计数不扫描，分块混入禁入依赖会静默通过。
+ *
  * @param {object} input
  * @param {Array<{ entry: string, out: string }>} input.pages 页面入口（相对仓库根）
- * @param {string} input.host 宿主入口（相对仓库根，产物固定 dist/extension.js）
+ * @param {string} [input.host] 宿主入口（相对仓库根，产物固定 dist/extension.js；
+ *   可省略——局部构建/测试场景跳过宿主段，正式构建经 build.mjs 恒传入）
  * @param {Array<{ entry: string, name: string }>} [input.esmModules] 模块产物
  *   入口（相对仓库根）与产物名：dist/<name>.js + dist/<name>-chunks/
  * @param {(message: string) => void} [input.log]
@@ -116,29 +122,38 @@ export async function buildAddon({ pages, host, esmModules = [], log = console.l
       minify: true,
       sourcemap: false,
       logLevel: 'silent',
+      // 与页面 IIFE 同一构建桥：虚拟 SDK 模块 + @codemirror/* 值导入拒绝
+      // ——分块（动态 import 的模块）同样经 resolve，从分块混入也在构建期被拦
+      plugins: [sdkBridge],
     })
     const outfile = path.join(distDir, `${module.name}.js`)
     scanArtifact(outfile, 'esm')
-    const chunkCount = existsSync(chunksDir)
-      ? readdirSync(chunksDir).filter((f) => f.endsWith('.js')).length
-      : 0
-    log(`[build] 模块 ${module.entry} -> dist/${module.name}.js + ${chunkCount} 分块（${statSync(outfile).size} B，扫描通过）`)
+    // 逐块扫描：分块与入口同等受 CM6/内部路径标记约束（旧实现只计数）
+    const chunks = existsSync(chunksDir)
+      ? readdirSync(chunksDir).filter((f) => f.endsWith('.js'))
+      : []
+    for (const chunk of chunks) {
+      scanArtifact(path.join(chunksDir, chunk), 'esm')
+    }
+    log(`[build] 模块 ${module.entry} -> dist/${module.name}.js + ${chunks.length} 分块（${statSync(outfile).size} B，逐产物扫描通过）`)
   }
-  const hostOut = path.join(repoRoot, 'dist', 'extension.js')
-  await build({
-    entryPoints: [path.join(repoRoot, host)],
-    outfile: hostOut,
-    bundle: true,
-    format: 'cjs',
-    platform: 'node',
-    target: 'node18',
-    minify: true,
-    sourcemap: false,
-    logLevel: 'silent',
-    external: ['vscode'],
-  })
-  scanArtifact(hostOut, 'host')
-  log(`[build] 宿主 ${host} -> dist/extension.js（${statSync(hostOut).size} B，扫描通过）`)
+  if (host) {
+    const hostOut = path.join(repoRoot, 'dist', 'extension.js')
+    await build({
+      entryPoints: [path.join(repoRoot, host)],
+      outfile: hostOut,
+      bundle: true,
+      format: 'cjs',
+      platform: 'node',
+      target: 'node18',
+      minify: true,
+      sourcemap: false,
+      logLevel: 'silent',
+      external: ['vscode'],
+    })
+    scanArtifact(hostOut, 'host')
+    log(`[build] 宿主 ${host} -> dist/extension.js（${statSync(hostOut).size} B，扫描通过）`)
+  }
   // 样式随页面拷贝（src/*.css -> dist/，装载登记 css: ['dist/editor.css'] 等；
   // 脚手架阶段尚无样式文件，保留通道供后续票使用）
   for (const name of readdirSync(path.join(repoRoot, 'src'))) {
