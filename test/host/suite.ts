@@ -1,8 +1,8 @@
 // 真宿主安装验证套件（票 #4 宿主测试基建层，衔接 #3 遗留项）：在下界
 // 宿主 VSCode 1.82.3 的扩展宿主内运行（由 test/host/run.mjs 经
 // --extensionTestsPath 装载，经 silentHost.mjs 独立桌面静默启动），以
-// extensionDevelopmentPath 模式同时装载 vsidian 宿主（vsidian@301d2c16
-// 构建产物）与本组件 dist 产物，断言四层：
+// extensionDevelopmentPath 模式同时装载 vsidian 宿主（vsidian@80dfc285
+// 构建产物，API 1.1.0 发行）与本组件 dist 产物，断言四层：
 //   1. 组件激活无错（extensionDependencies 联动 + registerAddon 成功）；
 //   2. 主题目录出现 Codex 候选（设置「外观 → 主题」的数据源）；
 //   3. 选择后 mermaid 渲染走组件（平台 paint 探针：provider 身份 + 几何

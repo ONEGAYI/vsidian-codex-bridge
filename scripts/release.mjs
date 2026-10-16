@@ -1,24 +1,37 @@
-// 发布打包脚本（票 #4）：compile → VSIX 打包 → 内容/体积红线检查 → 解包
-// manifest 冒烟。发行渠道决策见 docs/adr/0004：首期 GitHub Release VSIX
-// 分发，本脚本只产本地 VSIX——不提供任何上传/发布路径（无 marketplace /
-// gh release 通道），真实发行（GitHub Release 附 VSIX）是人工动作，需
-// 用户明确授权后执行；显式拒绝 --upload/--publish 是该边界的代码化。
+// 发布脚本（票 #4 + 发布链路升级）：package 子命令 = compile → VSIX 打包 →
+// 内容/体积红线检查 → 解包 manifest 冒烟（只产本地 VSIX）；release 子命令
+// = 以上全链 + 创建 GitHub Release 附带 VSIX。发行渠道决策见 docs/adr/0004
+// （2026-10-16 用户决策变更）：GitHub Release + VSCode Marketplace 双通道，
+// Release 由本脚本创建（gh release create，经 GH_TOKEN 认证），Marketplace
+// 由 release.yml 工作流从 Release 下载同一份 VSIX 发布——同一份字节。
 //
-//   npm run package    # compile + 打包 + 检查 + 冒烟（只产本地 VSIX）
+//   npm run package   # compile + 打包 + 红线 + 冒烟（本地日常）
+//   npm run release   # 以上全链 + gh release create 附 VSIX（CI 推 tag 触发）
+//
+// 发布的保护语义（对齐上游 vsidian 主仓 release.mjs，按本仓形态适配为
+// 子命令）：release 只在「工作树干净（--allow-dirty 显式豁免）+ CHANGELOG
+// 最新版本段与 package.json version 一致 + HEAD 精确命中 v<version> 标签 +
+// GH_TOKEN 在场 + Release 不存在」全过时执行——不允许在错误对象上发布；
+// Release 已存在时先读状态报错退出，不覆盖。旧 --upload/--publish 旗标是
+// 无发布通道时期（ADR-0004 原决策）的拒绝面，现已废弃：显式报错并指引
+// release 子命令。
 //
 // 打包命令与 CI 的 VSIX 步骤同款：npx @vscode/vsce package
 // --no-dependencies（esbuild bundle 自包含，无运行时 node_modules；vsce
 // 经 package.json 的 vscode:prepublish 自动重建三产物——本地与 CI 双保险）。
-// 版本发布流程（bump + re-vendor 联动）无脚本化：本仓无 CHANGELOG 机制，
-// 版本号 bump 人工编辑 package.json，联动清单见 README「安装与升级」。
+// 版本发布流程：CHANGELOG.md 记录面向用户的变更（Keep a Changelog 结构，
+// 本仓无 Unreleased 转正工具——发版提交把新条目人工写进新版本段并 bump
+// package.json），随后打 v<version> 标签推送触发 release.yml。
 //
 // 纯函数（parseUnzipListing / parsePszListing / inspectVsixEntries /
-// inspectVsixManifest）由 test/release.test.ts 契约测试钉住，形态对齐
-// 参照仓 vsidian-easy-typing 的 scripts/release.mjs（源头是 vsidian 主仓
-// scripts/release.mjs）。
+// inspectVsixManifest / mergeSoftWraps / extractLatestChangelog /
+// checkReleasePreconditions）由 test/release.test.ts 契约测试钉住，形态
+// 对齐上游 vsidian 主仓 scripts/release.mjs（提取/合并函数自其移植，
+// 本仓适配：尾部变更链接注释不卷入版本段——首版即最老版本段）。
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -41,12 +54,14 @@ export const SIZE_LIMITS = {
 // [Content_Types].xml 大小写混合）。
 const REQUIRED_ROOT = ['extension.vsixmanifest', '[content_types].xml']
 
-// 必需运行时资产：vsce 自动打入的 manifest/readme/license + dist 三主
-// 产物。mermaid-chunks/ 分块目录另行做非空断言（分块数量与散列随构建
-// 变化，不逐个枚举）。
+// 必需运行时资产：vsce 自动打入的 manifest/readme/changelog/license + dist
+// 三主产物。mermaid-chunks/ 分块目录另行做非空断言（分块数量与散列随构建
+// 变化，不逐个枚举）。CHANGELOG.md 随包（发布链路升级起）：VSCode 扩展
+// 详情页 Changelog 标签页的数据源。
 const REQUIRED_RUNTIME = [
   'package.json',
   'readme.md', // vsce 对仓库 README.md 自动打入（实测小写形态）
+  'changelog.md', // vsce 对仓库 CHANGELOG.md 自动打入（实测小写形态）
   'license', // 实测形态 LICENSE.txt，前缀匹配兜底
   'dist/extension.js',
   'dist/editor.js',
@@ -84,6 +99,7 @@ const ALLOWED_TOP = new Set([
   'dist',
   'package.json',
   'readme.md',
+  'changelog.md',
   'license',
   'license.txt',
 ])
@@ -208,6 +224,114 @@ export function inspectVsixManifest(manifestText, repoPkg) {
   return { ok: errors.length === 0, errors, warnings: [], totalBytes: 0 }
 }
 
+/**
+ * 合并段内软换行：CHANGELOG 源文件的条目折行原样进入 GitHub Release
+ * 说明后，渲染时断成锯齿短行并在中文行间并入空格——发布说明的消费方
+ * 是网页。空行、列表项、标题、引用与编号列表等结构边界保留换行；其余
+ * 行拼接到上一行，拼接双方都是 ASCII 字母/数字时补一个空格，CJK 相接
+ * 直接拼接。HTML 注释块（CHANGELOG 尾部的变更链接区）整体原样保留。
+ * （自上游 vsidian 主仓 scripts/release.mjs 移植，语义不改。）
+ */
+export function mergeSoftWraps(body) {
+  const out = []
+  let inComment = false
+  for (const raw of body.split('\n')) {
+    const line = raw.trim()
+    if (inComment) {
+      out.push(line)
+      if (line.includes('-->')) inComment = false
+      continue
+    }
+    if (line.includes('<!--') && !line.includes('-->')) {
+      inComment = true
+      out.push(line)
+      continue
+    }
+    if (line === '' || /^([-*+]|\d+[.)])\s/.test(line) || /^#{1,6}\s/.test(line) || /^>/.test(line)) {
+      out.push(line)
+      continue
+    }
+    const prev = out[out.length - 1]
+    if (prev === undefined || prev === '') {
+      out.push(line)
+    } else {
+      // 拼接点补空格的判据：ASCII 词界与中英混排边界（两个方向）都留
+      // 一个空格；CJK 相接与任一侧标点直接拼接。
+      const ascii = /[A-Za-z0-9]/
+      const cjk = /[\u3400-\u4dbf\u4e00-\u9fff]/
+      const prevEnd = prev[prev.length - 1]
+      const firstChar = line[0]
+      const needSpace =
+        (ascii.test(prevEnd) && ascii.test(firstChar)) ||
+        (cjk.test(prevEnd) && ascii.test(firstChar)) ||
+        (ascii.test(prevEnd) && cjk.test(firstChar))
+      out[out.length - 1] = needSpace ? `${prev} ${line}` : prev + line
+    }
+  }
+  return out.join('\n')
+}
+
+/**
+ * 提取 CHANGELOG.md 最新版本段落（GitHub Release 发布说明的来源）。
+ * 顶部常驻的 `## Unreleased` 开发段跳过（只认 `## <x.y.z>` 版本段，方括号
+ * 形态 `## [0.1.0]` 与裸形态 `## 0.1.0` 均可）——发布说明不混入开发中
+ * 内容（跳过语义与上游 vsidian 主仓同一函数一致；本仓无自动转正工具，
+ * 发版提交把新条目人工写进新版本段）。段体边界停在下一个 `## ` 段头或
+ * HTML 注释块起点（Keep a Changelog 尾部的变更链接区不属于任何版本段；
+ * 上游函数不拦注释——其发布永远从最新段提取、下方还有更老版本段垫着，
+ * 本仓首版即最老版本段，注释会紧贴其后，故显式排除）。
+ * @throws 最新版本段落与 expectedVersion 不符、或找不到版本段落时抛错。
+ */
+export function extractLatestChangelog(content, expectedVersion) {
+  const lines = content.split(/\r?\n/)
+  let start = -1
+  let version = null
+  let date = null
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^## (\[?[^\s\]]+\]?)\s*(?:-\s*(.*))?$/)
+    if (!m) continue
+    const token = m[1].replace(/^\[|\]$/g, '')
+    if (!/^\d+\.\d+\.\d+$/.test(token)) continue
+    start = i
+    version = token
+    date = (m[2] || '').trim() || null
+    break
+  }
+  if (start < 0) throw new Error('CHANGELOG.md 中未找到任何 `## <版本>` 段落')
+  if (version !== expectedVersion) {
+    throw new Error(`CHANGELOG 最新段落为 ${version}，与 package.json 的 ${expectedVersion} 不一致`)
+  }
+  const bodyEnd = lines.findIndex((l, i) => i > start && (/^## /.test(l) || /^<!--/.test(l)))
+  const body = lines.slice(start + 1, bodyEnd < 0 ? lines.length : bodyEnd).join('\n').trim()
+  return { version, date, body: mergeSoftWraps(body) }
+}
+
+/**
+ * 发布前置校验（纯函数）：tag 精确命中 / gh 认证 / 不覆盖既有 Release。
+ * 全过才允许走 gh release create——「不允许在错误对象上发布」的代码化。
+ * @param {{
+ *   version: string        // package.json 的 version
+ *   headTag: string|null   // git describe --tags --exact-match HEAD 的结果（无精确命中为 null）
+ *   ghToken?: string       // GH_TOKEN 环境变量（gh release create 认证）
+ *   releaseExists?: boolean|undefined // Release 存在性探测结果（未探测为 undefined，不算通过也不算失败）
+ * }} pre
+ * @returns {{ok:boolean,errors:string[]}}
+ */
+export function checkReleasePreconditions({ version, headTag, ghToken, releaseExists }) {
+  const errors = []
+  const tag = `v${version}`
+  if (headTag !== tag) {
+    errors.push(`HEAD 未打 ${tag} 标签（当前 ${headTag || '无'}）。发布只允许在精确命中 v<version> 的提交上执行：先提交并 git tag ${tag} 再发布`)
+  }
+  if (!ghToken) {
+    errors.push('GH_TOKEN 未设置：创建 GitHub Release 需要 gh 认证（CI 由工作流注入 github.token；本地需导出具有 contents:write 权限的 token）')
+  }
+  if (releaseExists) {
+    errors.push(`Release ${tag} 已存在：不覆盖既有发布——先 gh release view ${tag} 人工核对内容，确需重发先删除并明确后果`)
+  }
+  return { ok: errors.length === 0, errors }
+}
+
 /** 列出 zip 内容；优先 unzip（CI Linux / Git Bash），Windows 回退 PowerShell。 */
 function listZipEntries(vsixPath) {
   const unzip = spawnSync('unzip', ['-l', vsixPath], { encoding: 'utf8' })
@@ -254,6 +378,100 @@ function readRepoPkg(root) {
     extensionDependencies: pkg.extensionDependencies,
     vsidianAddon: pkg.vsidianAddon,
   }
+}
+
+/** git 子命令包装：失败抛错（发布链路对 git 不可用 fail-closed）。 */
+function git(args) {
+  const out = spawnSync('git', args, { encoding: 'utf8' })
+  if (out.status !== 0) throw new Error(`git ${args.join(' ')} 失败：${out.stderr}`)
+  return out.stdout.trim()
+}
+
+/** HEAD 是否精确命中某标签：命中返回标签名，未命中返回 null（不抛错——
+ * 非 tag 状态是发布前置校验的一个可报错分支，不是意外）。 */
+function describeExactHeadTag() {
+  const out = spawnSync('git', ['describe', '--tags', '--exact-match', 'HEAD'], { encoding: 'utf8' })
+  return out.status === 0 ? out.stdout.trim().split('\n')[0] : null
+}
+
+/**
+ * 发布链路：前置校验（干净树 / CHANGELOG 版本段 / tag 命中 / GH_TOKEN /
+ * Release 不存在）→ 打包 + 红线 + 冒烟（复用 runPackage）→ gh release
+ * create 附 VSIX，--notes-file 写入 CHANGELOG 完整版本段。
+ * 任一前置不过即明确报错退出——不允许在错误对象上发布。
+ */
+function runRelease(root) {
+  const argv = process.argv.slice(2)
+  const pkg = readRepoPkg(root)
+  const tag = `v${pkg.version}`
+
+  // 前置一：工作树干净（打包内容必须与被打标签的提交一致；--allow-dirty
+  // 显式豁免并自担「包内容可能与提交不符」的后果）
+  if (!argv.includes('--allow-dirty') && git(['status', '--porcelain']) !== '') {
+    console.error('工作树不干净：先提交或 stash，或用 --allow-dirty 明确跳过（打包内容可能与提交不符）')
+    process.exitCode = 1
+    return
+  }
+
+  // 前置二：CHANGELOG 最新版本段与 package.json version 一致（Release
+  // 说明来源；发版提交遗漏 bump 或忘记写版本段在此拦截）
+  let notes
+  try {
+    notes = extractLatestChangelog(readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8'), pkg.version)
+  } catch (err) {
+    console.error(`CHANGELOG 发布说明提取失败：${err instanceof Error ? err.message : String(err)}`)
+    process.exitCode = 1
+    return
+  }
+  console.log(`CHANGELOG ${notes.version}${notes.date ? `（${notes.date}）` : ''} 版本段提取成功，${notes.body.length} 字符（作为 Release 说明）`)
+
+  // 前置三/四（静态）：HEAD 精确命中 v<version> 标签 + GH_TOKEN 在场
+  const headTag = describeExactHeadTag()
+  const staticCheck = checkReleasePreconditions({ version: pkg.version, headTag, ghToken: process.env.GH_TOKEN })
+  if (!staticCheck.ok) {
+    for (const e of staticCheck.errors) console.error(`发布前置不满足：${e}`)
+    process.exitCode = 1
+    return
+  }
+
+  // 前置五：Release 已存在则拒绝（不覆盖）；探测本身失败（网络/权限）也
+  // fail-closed 退出，不在状态未知的 Release 对象上执行发布
+  let releaseExists = false
+  const view = spawnSync(`gh release view ${tag}`, { cwd: root, encoding: 'utf8', shell: true })
+  if (view.status === 0) {
+    releaseExists = true
+  } else if (!/not found|未找到|404/i.test(view.stderr || '')) {
+    console.error(`Release ${tag} 状态探测失败（无法确认可安全发布）：${view.stderr || view.stdout || 'gh 无输出'}`)
+    process.exitCode = 1
+    return
+  }
+  const existCheck = checkReleasePreconditions({ version: pkg.version, headTag, ghToken: process.env.GH_TOKEN, releaseExists })
+  if (!existCheck.ok) {
+    for (const e of existCheck.errors) console.error(`发布前置不满足：${e}`)
+    process.exitCode = 1
+    return
+  }
+
+  // 打包 + 红线 + manifest 冒烟（失败时 runPackage 已置退出码）
+  const vsixPath = runPackage(root)
+  if (!vsixPath || process.exitCode) return
+
+  // gh release create：--notes-file 写入完整版本段（CHANGELOG 提取产物）
+  const head = git(['rev-parse', 'HEAD'])
+  const notesFile = path.join(mkdtempSync(path.join(tmpdir(), 'vsidian-codex-bridge-release-')), 'notes.md')
+  writeFileSync(notesFile, notes.body + '\n', 'utf8')
+
+  console.log(`创建 GitHub Release ${tag} 并上传 ${path.basename(vsixPath)}…`)
+  // Windows 上 gh 是 .cmd，必须经 shell；参数拼接为整条命令避免 DEP0190
+  const gh = spawnSync(`gh release create ${tag} "${vsixPath}" --target ${head} --title ${tag} --notes-file "${notesFile}"`, { cwd: root, encoding: 'utf8', shell: true })
+  rmSync(path.dirname(notesFile), { recursive: true, force: true })
+  if (gh.status !== 0) {
+    console.error(gh.stdout)
+    console.error(gh.stderr)
+    process.exitCode = 1
+    return
+  }
+  console.log(`Release ${tag} 创建完成。Marketplace 发布由 release.yml 工作流从该 Release 下载同一份 VSIX 执行（双开关，见 docs/adr/0004）`)
 }
 
 /** 打包 + 内容/体积检查 + 解包冒烟。日常入口（npm run package）。 */
@@ -305,16 +523,18 @@ function runPackage(root) {
   }
   console.log('解包冒烟通过（manifest 合法、version/main/extensionDependencies/vsidianAddon 声明一致）')
 
-  console.log('发行护栏提醒：本脚本只产本地 VSIX、无上传路径；对外发布（GitHub Release 附 VSIX）是人工动作，需用户明确授权后执行')
+  console.log('本地打包完成。发布（GitHub Release 附 VSIX）：npm run release——须 HEAD 精确命中 v<version> 标签且 GH_TOKEN 在场（CI 由 release.yml 推 tag 触发）')
   return vsixPath
 }
 
 function main() {
   const argv = process.argv.slice(2)
 
-  // 发行护栏的代码化边界：显式拒绝任何上传意图（本脚本无上传路径）
+  // 旧护栏入口废弃指引：--upload/--publish 是无发布通道时期（ADR-0004 原决策）
+  // 的拒绝面，发布通道已落地为 release 子命令——旧旗标不映射、不静默忽略，
+  // 显式报错指引，防误以为沿旧入口可直接发布
   if (argv.includes('--upload') || argv.includes('--publish')) {
-    console.error('本脚本不提供上传/发布路径（无上传通道）：对外发布是人工动作，需用户明确授权后执行；脚本仅产本地 VSIX')
+    console.error('--upload/--publish 旗标已废弃：发布走 release 子命令（node scripts/release.mjs release），且须 HEAD 精确命中 v<version> 标签、GH_TOKEN 在场、Release 不存在（CI 由 release.yml 推 tag 触发）')
     process.exitCode = 1
     return
   }
@@ -324,8 +544,10 @@ function main() {
 
   if (command === 'package') {
     runPackage(root)
+  } else if (command === 'release') {
+    runRelease(root)
   } else {
-    console.error(`未知子命令 ${command}。用法：node scripts/release.mjs [package]（版本 bump 人工编辑 package.json，联动清单见 README「安装与升级」）`)
+    console.error(`未知子命令 ${command}。用法：node scripts/release.mjs [package|release]（package=本地打包；release=发布 GitHub Release，前置校验见脚本头注；版本 bump 人工编辑 package.json 并同步写 CHANGELOG 版本段）`)
     process.exitCode = 1
   }
 }

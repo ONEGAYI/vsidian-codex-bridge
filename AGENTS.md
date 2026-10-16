@@ -5,7 +5,7 @@
 1. **粘贴还原**：识别 Codex 聊天剪贴板里的 `data-prompt-link-*` span，还原为标准 Markdown 链接（上游粘贴转换扩展点 API，宿主侧 `enableCtx.paste.registerRules`）；
 2. **Mermaid Codex 主题**：以渲染提供者身份重新提供 Codex 预设（亮暗色板、ELK 布局、六类图型），宿主侧 `enableCtx.themes.register` 登记元数据 + 页面侧 `sdk.renderers.register` 执行渲染。
 
-> 状态：**实施期**。上游 API 已落地——粘贴转换（[vsidian#530](https://github.com/ONEGAYI/vsidian/issues/530)）与主题注册（[vsidian#533](https://github.com/ONEGAYI/vsidian/issues/533) / T07）已完成，2026-10-16 batch-2 PR #564 合入 vsidian main@`301d2c16`（T01–T07 已合入但待用户整体验收，API 处候选期形状可能调整）；vendor 类型快照锚定该提交。实施顺序：**#1（脚手架）→ #2（粘贴还原）→ #3（Mermaid Codex 主题）→ #4（发布与分发）**——四票均已实施（#2 见 docs/adr/0002，#3 见 docs/adr/0003，#4 见 docs/adr/0004：VSIX 打包链与内容红线、CI 工作流、真宿主安装验证、安装升级文档），多项 `pending-decision` 按推荐先行待追认；#3 被 [vsidian#535](https://github.com/ONEGAYI/vsidian/issues/535)（T08 内核 Codex 退役）反向等待（其前置的可安装 VSIX 与真宿主安装验证已随 #4 交付）。
+> 状态：**实施期**。上游 API 已落地并发行——粘贴转换（[vsidian#530](https://github.com/ONEGAYI/vsidian/issues/530)）与主题注册（[vsidian#533](https://github.com/ONEGAYI/vsidian/issues/533) / T07）已完成，2026-10-16 batch-2 PR #564 合入 vsidian main@`301d2c16` 后，上游随本体 1.1.0 发行附加组件 API 1.1.0（vendor 类型快照经首次显式 re-vendor 锚定发行提交 `80dfc285`，candidate 面全量转正、无破坏性变更；T01–T07 仍待用户整体验收）。实施顺序：**#1（脚手架）→ #2（粘贴还原）→ #3（Mermaid Codex 主题）→ #4（发布与分发）**——四票均已实施（#2 见 docs/adr/0002，#3 见 docs/adr/0003，#4 见 docs/adr/0004：VSIX 打包链与内容红线、CI 工作流、真宿主安装验证、安装升级文档），多项 `pending-decision` 按推荐先行待追认；#4 渠道决策已于 2026-10-16 经用户决策升级为**双通道自动发布**（GitHub Release + Marketplace 双开关，release.yml 推 `v*` 标签触发，见 docs/adr/0004 决策一变更）。#3 被 [vsidian#535](https://github.com/ONEGAYI/vsidian/issues/535)（T08 内核 Codex 退役）反向等待（其前置的可安装 VSIX 与真宿主安装验证已随 #4 交付）。
 
 ## 约定
 
@@ -23,16 +23,18 @@ vsidian-codex-bridge/
 ├── CLAUDE.md                  # @AGENTS.md 导入 + Claude 专属补充
 ├── LICENSE                    # MIT
 ├── README.md                  # 项目门面：状态、能力规划、实施决策、安装与升级
+├── CHANGELOG.md               # 面向用户的版本变更（Keep a Changelog；release 子命令提取最新版本段作 Release 说明）
 ├── .vscodeignore               # VSIX 打包输入黑名单（源码/测试/工程设施不入包）
 ├── build.mjs                  # 三产物构建入口（页面 IIFE + mermaid esm 分块 + 宿主 CJS）
-├── package.json               # 含 vsidianAddon 清单声明（manifestVersion 1 / api ^1.0.0，零 experimental）
+├── package.json               # 含 vsidianAddon 清单声明（manifestVersion 1 / api ^1.1.0，零 experimental）
 ├── tsconfig.json              # tsc --noEmit 类型检查（esbuild 不查类型）
 ├── vitest.config.ts           # 单元层测试配置（node 环境 + vsidian-addon-sdk 测试 shim 别名）
 ├── .github/workflows/ci.yml   # CI：npm ci → compile → test → vendor:check → VSIX 打包上传（票 #4）
+├── .github/workflows/release.yml # 发布：推 v* 标签创建 Release 附 VSIX + Marketplace 双开关自动发布
 ├── docs/adr/                  # 架构决策记录（0001 脚手架 / 0002 粘贴还原 / 0003 Mermaid 主题 / 0004 发布与分发）
 ├── scripts/
-│   ├── vendorSdkTypes.mjs     # SDK 类型快照生成/校验（锚定 vsidian@301d2c16；npm run vendor:sdk / vendor:check）
-│   ├── release.mjs            # VSIX 打包 + 内容/体积红线 + manifest 冒烟（票 #4；npm run package，无上传路径）
+│   ├── vendorSdkTypes.mjs     # SDK 类型快照生成/校验（锚定 vsidian@80dfc285，API 1.1.0 发行；npm run vendor:sdk / vendor:check）
+│   ├── release.mjs            # VSIX 打包 + 内容/体积红线 + manifest 冒烟 + GitHub Release 发布（package / release 子命令，前置五闸见 docs/adr/0004）
 │   └── release.d.mts          # 上者编译期类型声明（契约测试消费面）
 ├── src/
 │   ├── extension.ts           # 宿主入口：registerAddon 两段生命周期（票 #2 粘贴还原 + enable 调 codexEnable）
@@ -52,8 +54,8 @@ vsidian-codex-bridge/
 │   ├── scaffold.test.ts       # 脚手架结构契约（manifest / vendor 纪律 / 目录 / 导入纪律 / 产物形态）
 │   ├── paste-rules.test.ts    # Codex 粘贴还原契约（票 #2：纯数据 / 识别面 / 产出形态 / 预算 / 注册行为）
 │   ├── codex-*.test.ts        # 主题契约（色板对拍 / 运行时协议 / 渲染器行为 / 登记装配 / 装载器）
-│   ├── release.test.ts        # 发布红线契约（票 #4：VSIX 内容清单 / 体积红线 / manifest 冒烟 / 护栏）
-│   ├── ci-workflow.test.ts    # CI 工作流结构契约（票 #4：触发与步骤链 / artifact 上传）
+│   ├── release.test.ts        # 发布红线契约（VSIX 内容清单 / 体积红线 / manifest 冒烟 / CHANGELOG 提取 / 发布前置校验）
+│   ├── ci-workflow.test.ts    # CI 与 Release 工作流结构契约（触发与步骤链 / artifact 上传 / 双开关）
 │   ├── host-infra.test.ts     # 宿主测试基建契约（票 #4：静默通道文件在场 / ps1 关键 API 防误改 / 入口）
 │   ├── fixtures/
 │   │   └── addon-sdk-shim.mjs # vsidian-addon-sdk 测试侧 shim（vitest alias 指向）

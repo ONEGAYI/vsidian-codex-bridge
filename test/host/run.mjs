@@ -38,18 +38,18 @@ function resolveHostRoot(args) {
   const fromFlag = flag >= 0 ? args[flag + 1] : undefined
   const root = fromFlag || process.env.VSIDIAN_HOST_OUT
   if (!root) {
-    fail('未指定 vsidian 宿主仓根：用法 npm run test:host -- --host <vsidian仓根>（或环境变量 VSIDIAN_HOST_OUT）。宿主仓须含构建产物 out/extension.js——vendor 锚定提交 301d2c16 或更新的构建')
+    fail('未指定 vsidian 宿主仓根：用法 npm run test:host -- --host <vsidian仓根>（或环境变量 VSIDIAN_HOST_OUT）。宿主仓须含构建产物 out/extension.js——vendor 锚定提交 80dfc285（API 1.1.0 发行）或更新的构建')
     return null
   }
   if (!existsSync(path.join(root, 'out', 'extension.js'))) {
-    fail(`${root} 下无 out/extension.js——先用该仓构建（npm run vscode:prepublish）；须为 301d2c16 或更新（含 batch-2 主题 API）`)
+    fail(`${root} 下无 out/extension.js——先用该仓构建（npm run vscode:prepublish）；须为 80dfc285（API 1.1.0 发行）或更新（含 batch-2 主题 API）`)
     return null
   }
   // 自检 batch-2 面在场：主题目录观测钩子是套件断言入口，旧宿主（如
   // 0e5d5bc7 工作树产物）没有该命令——用旧宿主跑会得到假红（钩子缺席）
   const hostBundle = readFileSync(path.join(root, 'out', 'extension.js'), 'utf8')
   if (!hostBundle.includes('_test.addonThemes')) {
-    fail(`${root} 的 out/extension.js 不含 _test.addonThemes——宿主产物早于 batch-2（主题注册 API 面 2026-10-16 随 PR #564 合入），请用 301d2c16 或更新构建`)
+    fail(`${root} 的 out/extension.js 不含 _test.addonThemes——宿主产物早于 batch-2（主题注册 API 面 2026-10-16 随 PR #564 合入），请用 80dfc285（API 1.1.0 发行）或更新构建`)
     return null
   }
   return root

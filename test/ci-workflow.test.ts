@@ -14,6 +14,7 @@ import path from 'node:path'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const workflowPath = path.join(repoRoot, '.github/workflows/ci.yml')
+const releaseWorkflowPath = path.join(repoRoot, '.github/workflows/release.yml')
 
 describe('CI 工作流结构契约', () => {
   it('workflow 文件在场', () => {
@@ -52,5 +53,66 @@ describe('CI 工作流结构契约', () => {
     expect(text).toMatch(/reporter=json/)
     expect(text).toMatch(/name:\s*test-report-a\$\{\{ github\.run_attempt \}\}/)
     expect(text).toMatch(/if:\s*\$\{\{ failure\(\) \}\}/)
+  })
+})
+
+// 发布工作流结构契约（发布链路升级，2026-10-16 用户决策：GitHub Release +
+// VSCode Marketplace 双通道自动发布）：钉住 .github/workflows/release.yml 的
+// 触发（推 v* 标签 + dispatch 补跑）、双 job 分工与 Marketplace 双开关。
+// 形态照搬上游 vsidian 主仓 release.yml，适配点：发布前复验步骤换本仓对应
+// 物（vendor:check + 源仓获取，同 ci.yml 方式）；双开关（secrets.VSCE_PAT +
+// vars.MARKETPLACE_PUBLISH）在上游仅存于注释语义，本仓显式代码化进 job if。
+
+describe('Release 工作流结构契约', () => {
+  it('workflow 文件在场', () => {
+    expect(existsSync(releaseWorkflowPath), '.github/workflows/release.yml 缺失').toBe(true)
+  })
+
+  it('推 v* 标签触发 + workflow_dispatch 补跑入口（tag 输入）', () => {
+    const text = readFileSync(releaseWorkflowPath, 'utf8')
+    expect(text).toMatch(/push:\s*\n\s*tags:\s*\[\s*'v\*'\s*\]/)
+    expect(text).toMatch(/workflow_dispatch:/)
+    expect(text).toMatch(/inputs:\s*\n\s*tag:/)
+  })
+
+  it('双 job：release（tag 推送）与 marketplace（从 Release 取同一份 VSIX 发布）', () => {
+    const text = readFileSync(releaseWorkflowPath, 'utf8')
+    expect(text).toMatch(/\n  release:\s*\n/)
+    expect(text).toMatch(/\n  marketplace:\s*\n/)
+    expect(text).toMatch(/needs:\s*release/)
+    // marketplace 从 Release 下载同一份 VSIX——release 与市场发布同一字节
+    expect(text).toMatch(/gh release download/)
+    expect(text).toMatch(/vsce publish --no-dependencies --packagePath \.\/\*\.vsix/)
+  })
+
+  it('release job：完整历史与标签检出（tag 精确命中校验依赖）', () => {
+    const text = readFileSync(releaseWorkflowPath, 'utf8')
+    expect(text).toMatch(/fetch-depth:\s*0/)
+    expect(text).toMatch(/fetch-tags:\s*true/)
+    // 创建 Release 需要 contents: write 权限与 GH_TOKEN
+    expect(text).toMatch(/contents:\s*write/)
+    expect(text).toMatch(/GH_TOKEN:\s*\$\{\{ github\.token \}\}/)
+    expect(text).toContain('npm run release')
+  })
+
+  it('release job 发布前复验：vendor 快照防漂移（源仓获取同 CI 方式）', () => {
+    const text = readFileSync(releaseWorkflowPath, 'utf8')
+    expect(text).toMatch(/git clone --filter=blob:none .*ONEGAYI\/vsidian\.git/)
+    expect(text).toContain('npm run vendor:check')
+    expect(text).toContain('VSIDIAN_SOURCE_REPO:')
+  })
+
+  it('Marketplace 双开关代码化：MARKETPLACE_PUBLISH 变量与 VSCE_PAT 密钥都配置才执行', () => {
+    const text = readFileSync(releaseWorkflowPath, 'utf8')
+    expect(text).toMatch(/vars\.MARKETPLACE_PUBLISH == 'true'/)
+    expect(text).toMatch(/secrets\.VSCE_PAT != ''/)
+    expect(text).toMatch(/VSCE_PAT:\s*\$\{\{ secrets\.VSCE_PAT \}\}/)
+  })
+
+  it('dispatch 补跑豁免：!cancelled() 绕过上游 release job 的 skipped', () => {
+    const text = readFileSync(releaseWorkflowPath, 'utf8')
+    expect(text).toMatch(/!cancelled\(\)/)
+    // release job 只在真实 tag 推送时执行，dispatch 只跑 marketplace
+    expect(text).toMatch(/if:\s*github\.event_name == 'push'/)
   })
 })

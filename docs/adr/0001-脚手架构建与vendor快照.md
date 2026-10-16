@@ -27,6 +27,10 @@
 
 **对参照脚本的必要修复**（301d2c16 依赖拓扑实证）：闭包迭代存在「在途请求丢失」缺陷——同一轮内，先处理的模块请求某依赖时，从 pending（轮首已清空）与 rooted（尚未处理）都取不到该依赖在队列尾部的更大请求集合，会以更小集合入队并在下一轮 `rooted.set` 覆盖已保留名字（实证：`SerChange` 与 `HoverPreviewFailReason` 分轮到达 protocol.ts，最终快照丢 `SerChange` → tsc TS2305）。修复：请求合并计入在途集合（queue 快照内的请求参与「已请求」判定）、rooted 更新取并集。easy-typing 锚定的旧提交拓扑恰好未触发该缺陷；re-vendor 到新提交时会需要此修复。
 
+> **re-vendor 台账**
+>
+> - **2026-10-16（首次显式 re-vendor）**：锚 `301d2c16` → `80dfc285223e66b3b80535fd7f16b0df04ee8ded`——上游「重锚附加组件 API 契约基线至 1.1.0 发行提交」，附加组件 API 1.1.0 随本体 1.1.0 发行（releasedAt 2026-10-16）：1.0.0 candidate 面全量并入、无破坏性变更，本仓消费面（paste/themes/renderers/themeEnvironment）原样转正。快照 diff 逐文件审读：26 个文件（完整面 13 + 最小闭包 13）全部仅头注来源哈希行更新，**类型形状零变化**——两锚间上游 src/ 变更只有 `addonIdentity.ts` 的 `ADDON_API_VERSION` 常量（'1.0.0' → '1.1.0'）与 `addonApiCatalog.ts` 发行台账数据表（补 1.1.0 released 记录），均为值级导出、被快照天然剥离。api 声明随之 `^1.0.0` → `^1.1.0`（`test/scaffold.test.ts` 钉值同步）。真宿主四层断言在 1.1.0 宿主构建（`80dfc285`）上全过——组件对真实发行版宿主的首次实证。
+
 ## 决策三：清单声明与依赖锁定
 
 - `vsidianAddon: { manifestVersion: 1, api: "^1.0.0" }`——api 范围必须 `^`（宿主兼容判定要求声明范围包含宿主版本）；**首期零 experimental**：粘贴与主题全在稳定候选面，experimental 声明宿主未提供的入口名会使整个组件判不兼容（`experimental-unsupported`）。后续票确需实验入口时扩充并保持 `^`（红线由 `test/scaffold.test.ts` 钉死）；
