@@ -13,7 +13,7 @@
 
 ## 状态
 
-**实施期**——上游 API 已落地：粘贴转换（#530）与主题注册（#533 / T07）已完成，2026-10-16 batch-2 PR #564 合入 vsidian main@`301d2c16`（T01–T07 全部在内，T08/`#535` 内核退役未实施）；T01–T07 虽已合入 main，仍待用户整体验收，API 处候选期、形状可能调整。实施顺序：#1 脚手架（完成）→ #2 粘贴还原（**已实现，待验收**，决策见 [ADR-0002](docs/adr/0002-粘贴还原href产出口径与属性形态兼容.md)）→ #3 Mermaid Codex 主题（**已实现**：色板逐值迁移自内核 + mermaid esm 分块产物，单元/浏览器层验证全绿）→ #4 发布与分发（**已实施**：VSIX 打包链与内容红线、CI 工作流、真宿主安装验证、安装升级文档，决策见 [ADR-0004](docs/adr/0004-发布与分发形态.md)）；#3 被 vsidian#535 反向等待（其交付后内核才退役内置 Codex 主题）。组件不在场时 Vsidian 完全可用（回落内置转换与 default 主题）。
+**实施期**——上游 API 已落地：粘贴转换（#530）与主题注册（#533 / T07）已完成，2026-10-16 batch-2 PR #564 合入 vsidian main@`301d2c16`（T01–T07 全部在内，T08/`#535` 内核退役未实施）；T01–T07 虽已合入 main，仍待用户整体验收，API 处候选期、形状可能调整。实施顺序：#1 脚手架（完成）→ #2 粘贴还原（**已实现，待验收**，决策见 [ADR-0002](docs/adr/0002-粘贴还原href产出口径与属性形态兼容.md)）→ #3 Mermaid Codex 主题（**已实现**：色板逐值迁移自内核 + mermaid esm 分块产物，单元/浏览器层验证全绿）→ #4 发布与分发（**已实施**：VSIX 打包链与内容红线、CI 工作流、真宿主安装验证、安装升级文档，决策见 [ADR-0004](docs/adr/0004-发布与分发形态.md)）；发布链路已升级为双通道自动发布（GitHub Release + Marketplace 双开关，用户决策见 ADR-0004 决策一变更）。#3 被 vsidian#535 反向等待（其交付后内核才退役内置 Codex 主题）。组件不在场时 Vsidian 完全可用（回落内置转换与 default 主题）。
 
 ## 实施决策（已按推荐先行，待追认）
 
@@ -27,14 +27,18 @@
 
 ## 安装与升级
 
-### 安装（VSIX 侧载）
+### 安装
 
-1. 前置：已安装 [Vsidian](https://github.com/ONEGAYI/vsidian) 本体（本组件声明 `extensionDependencies: ["onegayi.vsidian"]`，宿主缺席时组件不激活且无副作用）；
-2. 从本仓库 [Releases](https://github.com/ONEGAYI/vsidian-codex-bridge/releases) 下载 VSIX（如 `vsidian-codex-bridge-0.1.0.vsix`）；
-3. 安装：VSCode 扩展面板「… → 从 VSIX 安装」，或命令行 `code --install-extension vsidian-codex-bridge-0.1.0.vsix`；
-4. 装好后即生效：粘贴 Codex 聊天内容自动还原链接；「设置 → 外观 → 主题」出现 **Codex** 候选（安装只新增候选不自动切换，选择归用户）。
+前置：已安装 [Vsidian](https://github.com/ONEGAYI/vsidian) 本体（本组件声明 `extensionDependencies: ["onegayi.vsidian"]`，宿主缺席时组件不激活且无副作用）。
 
-首期分发渠道是 GitHub Release VSIX；VSCode Marketplace 留作后续可选（触发条件与理由见 [ADR-0004](docs/adr/0004-发布与分发形态.md)）。
+两个渠道任选其一（同一份 VSIX 字节）：
+
+1. **VSCode Marketplace**（仓库配置双开关后可用）：扩展面板搜索 `vsidian-codex-bridge`（publisher `ONEGAYI`）安装，或命令行 `code --install-extension ONEGAYI.vsidian-codex-bridge`；
+2. **GitHub Release 侧载**：从本仓库 [Releases](https://github.com/ONEGAYI/vsidian-codex-bridge/releases) 下载 VSIX（如 `vsidian-codex-bridge-0.1.0.vsix`），扩展面板「… → 从 VSIX 安装」，或 `code --install-extension vsidian-codex-bridge-0.1.0.vsix`。
+
+装好后即生效：粘贴 Codex 聊天内容自动还原链接；「设置 → 外观 → 主题」出现 **Codex** 候选（安装只新增候选不自动切换，选择归用户）。
+
+发布形态与双通道自动发布的说明（决策与机制见 [ADR-0004](docs/adr/0004-发布与分发形态.md)）：推 `v*` 标签自动创建 GitHub Release 附 VSIX；Marketplace 自动发布需仓库双开关——**Settings → Secrets and variables → Actions** 下配置 Secrets 的 `VSCE_PAT`（Azure DevOps PAT：Organization 选 All accessible organizations，Scope 选 Marketplace → Manage）与 Variables 的 `MARKETPLACE_PUBLISH = true`，两道开关都配置才执行（从 Release 下载同一份 VSIX 发布）；未配置时推 tag 只产出 GitHub Release。Marketplace 页面首版使用默认图标占位（本仓暂无图标资产，接受性见 ADR-0004）。
 
 ### 版本兼容表
 
@@ -46,7 +50,7 @@
 
 ### 升级
 
-下载新版 VSIX 后覆盖安装即可（`code --install-extension` 直接指定新文件）。升级说明随各 Release 附发布说明；若新版跟随上游 re-vendor，Release 说明会标注「需 vsidian ≥ 对应提交构建」。
+Marketplace 渠道安装的组件随发布自动更新；GitHub Release 渠道下载新版 VSIX 后覆盖安装即可（`code --install-extension` 直接指定新文件）。升级说明随各 Release 附发布说明（取自 [CHANGELOG](CHANGELOG.md) 对应版本段）；若新版跟随上游 re-vendor，Release 说明会标注「需 vsidian ≥ 对应提交构建」。
 
 ### 降级与卸载
 
@@ -57,10 +61,11 @@
 ```bash
 npm install          # 安装 devDependencies（无运行时依赖）
 npm run compile      # 三产物构建（extension.js + editor.js + mermaid.js 及分块）+ 类型检查
-npm test             # 先构建再跑 vitest（119 用例：结构契约 + 粘贴还原 + Codex 主题 + 发布红线 + CI/宿主基建契约）
+npm test             # 先构建再跑 vitest（162 用例：结构契约 + 粘贴还原 + Codex 主题 + 发布红线 + CI/Release 工作流与宿主基建契约）
 npm run vendor:check # 校验 types/vendor/ 快照与生成器无漂移
 npm run vendor:sdk   # 重新生成类型快照（升级锚定提交改脚本 DEFAULT_COMMIT 后重跑）
-npm run package      # compile + VSIX 打包 + 内容/体积红线 + manifest 冒烟（只产本地 VSIX，无上传路径）
+npm run package      # compile + VSIX 打包 + 内容/体积红线 + manifest 冒烟（只产本地 VSIX）
+npm run release      # 发布链路：package 全链 + gh release create 附 VSIX（须 v<version> 标签命中 + GH_TOKEN，CI 推 tag 触发）
 npm run test:host    # 宿主层验证（静默通道：独立桌面起 VSCode 1.82.3，需 --host 指向 vsidian 构建产物仓）
 node test/browser/smoke-mermaid.mjs   # 浏览器层冒烟（需 vsidian 主仓 node_modules 的 Playwright）
 ```
