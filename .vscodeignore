@@ -1,0 +1,28 @@
+# bundle 后产物自包含（dist/ 由 esbuild 打包，mermaid 分块随 dist 入包），
+# 源码、测试、工程设施与过程留档不进入 VSIX。对齐 vsidian 主仓与参照仓
+# vsidian-easy-typing 的黑名单模式；VSIX 体积红线与内容检查归
+# scripts/release.mjs（npm run package），CI 只构建与上传。
+.github/**
+.vscode/**
+.vscode-test/**
+.zcode/**
+scripts/**
+tools/**
+node_modules/**
+src/**
+test/**
+types/**
+docs/**
+build.mjs
+tsconfig.json
+vitest.config.ts
+CONTEXT.md
+CLAUDE.md
+AGENTS.md
+.gitignore
+.gitattributes
+.git/**
+package-lock.json
+*.vsix
+**/*.map
+**/*.log
