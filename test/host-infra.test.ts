@@ -7,7 +7,7 @@
 // 级联会让单元层失去「秒级、零外部依赖」的属性；两者边界见 ADR-0004。
 import { readFileSync, existsSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -55,8 +55,26 @@ describe('宿主测试基建层（test/host/ 常驻）', () => {
     const text = readFileSync(path.join(repoRoot, 'test/host/silentHost.mjs'), 'utf8')
     expect(text).toContain("'-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', hiddenDesktopScript")
     expect(text).toContain('windowsHide: windowsWrapper')
-    // 非 Windows 回退 foreground（desktop 仅 win32）
-    expect(text).toContain("requested ?? (platform === 'win32' ? 'desktop' : 'foreground')")
+  })
+
+  it('非 Windows 无隔离后端时拒绝运行（PR #5 约定统一，不静默回落 foreground）', async () => {
+    // 行为契约：resolveTestHostMode 是纯函数（platform/env 参数化），直接
+    // 断言——非 Windows 无论缺省还是显式 foreground/desktop 都必须抛错
+    // 说明原因（静默回落 foreground 会在用户桌面弹 GUI，违反「宿主层禁止
+    // 用户桌面可见 GUI」约定）；Windows 缺省 desktop、显式值透传
+    const { resolveTestHostMode } = await import(pathToFileURL(path.join(repoRoot, 'test/host/silentHost.mjs')).href)
+    expect(resolveTestHostMode('win32', {})).toBe('desktop')
+    expect(resolveTestHostMode('win32', { VSIDIAN_TEST_HOST_MODE: 'foreground' })).toBe('foreground')
+    expect(resolveTestHostMode('win32', { VSIDIAN_TEST_HOST_MODE: 'desktop' })).toBe('desktop')
+    for (const env of [{}, { VSIDIAN_TEST_HOST_MODE: 'foreground' }, { VSIDIAN_TEST_HOST_MODE: 'desktop' }]) {
+      // 缺省与显式 foreground 拒绝理由是「无静默宿主后端」；显式 desktop
+      // 命中更早的「仅支持 Windows」分支——三者都必须抛错而非回落
+      expect(() => resolveTestHostMode('linux', env), `linux + ${JSON.stringify(env)} 应拒绝`).toThrow(/无静默宿主后端|仅支持 Windows/)
+      expect(() => resolveTestHostMode('darwin', env), `darwin + ${JSON.stringify(env)} 应拒绝`).toThrow(/无静默宿主后端|仅支持 Windows/)
+    }
+    // 入口在下载 VSCode 之前预检（失败原因立即可见）
+    const runText = readFileSync(path.join(repoRoot, 'test/host/run.mjs'), 'utf8')
+    expect(runText).toContain('resolveTestHostMode()')
   })
 
   it('入口自检 batch-2 主题 API 面（防旧宿主产物假红）', () => {

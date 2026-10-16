@@ -13,14 +13,15 @@
 // → 报告落盘 .vscode-test/host-check.log → 退出码透传。
 // 静默性：Windows 默认 desktop 模式（VSIDIAN_TEST_HOST_MODE 可显式
 // foreground / desktop），宿主窗口只存在于测试桌面，用户桌面不可见；
-// 结束时的「可见窗口峰值 / 前台 PID」证据行随报告落盘。
+// 结束时的「可见窗口峰值 / 前台 PID」证据行随报告落盘。非 Windows 无
+// 隔离后端，入口预检直接拒绝（PR #5 约定统一，见 silentHost.mjs）。
 // 本仓后续一切宿主层验证默认走本通道（常驻基建，见 ADR-0004）。
 import { build } from 'esbuild'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { runTestHost } from './silentHost.mjs'
+import { runTestHost, resolveTestHostMode } from './silentHost.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const cacheDir = path.join(repoRoot, '.vscode-test')
@@ -85,6 +86,9 @@ async function resolveExecutable() {
 
 async function main() {
   const args = process.argv.slice(2)
+  // 静默模式预检（PR #5 约定统一）：非 Windows 无隔离后端直接拒绝——
+  // 提前到下载 VSCode（约 130MB）与构建套件之前，失败原因立即可见
+  resolveTestHostMode()
   const hostRoot = resolveHostRoot(args)
   if (!hostRoot) return
 

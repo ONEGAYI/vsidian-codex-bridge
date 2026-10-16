@@ -9,7 +9,8 @@
 // 通道形态：Windows 经 powershell 包装 hiddenDesktop.ps1（Base64 配置，
 // windowsHide），VSCode 宿主起在独立窗口站+桌面（用户桌面不可见、剪贴板
 // 随窗口站隔离、Job Object KILL_ON_JOB_CLOSE 保证启动器退出即清理进程
-// 树）；非 Windows 直起可执行文件（foreground 模式）。宿主超时/信号均经
+// 树）；非 Windows **拒绝运行**（无隔离后端，foreground 会在用户桌面弹
+// GUI——违反本仓静默约定，见 resolveTestHostMode）。宿主超时/信号均经
 // stop 统一收尾并留最近输出尾行；stdout/stderr 全量写报告文件（跑一次
 // = 留一份证据，复核读文件不重跑）。
 //
@@ -51,7 +52,19 @@ export function resolveTestHostMode(platform = process.platform, env = process.e
   if (requested === 'desktop' && platform !== 'win32') {
     throw new Error('VSIDIAN_TEST_HOST_MODE=desktop 仅支持 Windows')
   }
-  return requested ?? (platform === 'win32' ? 'desktop' : 'foreground')
+  if (platform === 'win32') {
+    return requested ?? 'desktop'
+  }
+  // 非 Windows 一律拒绝（PR #5 约定统一）：独立桌面后端（hiddenDesktop.ps1）
+  // 是 Win32 通道，本仓约定宿主层禁止用户桌面可见 GUI——foreground 会在
+  // 用户桌面弹出宿主窗口，静默回落不可接受。显式请求 foreground 同样拒
+  // 绝（无隔离后端时不存在合规的可见模式）。如需在 Linux/macOS 跑宿主层，
+  // 先为该平台提供隔离后端（如 Linux 下 xvfb/headless 方案）再放开。
+  throw new Error(
+    '非 Windows 平台无静默宿主后端：独立桌面通道（hiddenDesktop.ps1）仅支持 Windows，' +
+      'foreground 模式会在用户桌面弹出 GUI——按本仓「宿主层禁止用户桌面可见 GUI」约定拒绝运行。' +
+      '如需支持该平台，请先提供隔离后端（如 Linux 的 xvfb/headless）再放开此处。',
+  )
 }
 
 export function runTestHost({ executable, args, env, mode = resolveTestHostMode(), timeoutMs = 5 * 60_000, stdout = process.stdout, stderr = process.stderr, reportPath }) {
@@ -60,6 +73,10 @@ export function runTestHost({ executable, args, env, mode = resolveTestHostMode(
   }
   if (mode !== 'desktop' && mode !== 'foreground') {
     throw new Error(`未知测试宿主模式：${mode}`)
+  }
+  if (mode === 'foreground' && process.platform !== 'win32') {
+    // 防线：resolveTestHostMode 已拒，显式传 mode 绕过默认值时同样拦截
+    throw new Error('foreground 模式仅支持 Windows（非 Windows 无隔离后端，会在用户桌面弹 GUI）')
   }
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error(`测试宿主超时必须为正数：${timeoutMs}`)
