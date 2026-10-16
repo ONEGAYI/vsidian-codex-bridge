@@ -57,7 +57,7 @@ const REPO_PKG = {
   extensionDependencies: ['onegayi.vsidian'],
   vsidianAddon: {
     manifestVersion: 1,
-    api: '^1.0.0',
+    api: '^1.1.0',
   },
 }
 

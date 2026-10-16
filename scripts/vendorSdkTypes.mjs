@@ -39,10 +39,11 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 
 /**
  * 当前快照锚定的 vsidian 提交（re-vendor 升级时随变更修改此常量并重跑）。
- * 301d2c16 = batch-2 PR #564 合入 main（2026-10-16）：T01–T07 全部在内
- * （含 #530 粘贴转换与 #546/T07 主题注册 API 面），T08（#535 内核退役）未实施。
+ * 80dfc285 = 附加组件 API 1.1.0 发行提交（2026-10-16 released）：candidate
+ * 1.0.0 面（锚 301d2c16，batch-2 PR #564 合入点）全量并入、无破坏性变更，
+ * 本仓消费面（paste/themes/renderers/themeEnvironment）原样转正。
  */
-const DEFAULT_COMMIT = '301d2c162a25f1e34c90cb54f74a26cdc2fbee7e'
+const DEFAULT_COMMIT = '80dfc285223e66b3b80535fd7f16b0df04ee8ded'
 
 /**
  * vendor 入口：公开 API 面文件，保留完整导出类型面。

@@ -28,7 +28,7 @@
   "activationEvents": [],
   "vsidianAddon": {
     "manifestVersion": 1,
-    "api": "^1.0.0"
+    "api": "^1.1.0"
   },
   "main": "./dist/extension.js",
   "scripts": {

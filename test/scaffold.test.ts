@@ -46,7 +46,9 @@ describe('manifest 契约（vsidianAddon 清单与依赖锁定）', () => {
 
   it('vsidianAddon 声明：api 范围用 ^，首期不声明 experimental', () => {
     expect(pkg.vsidianAddon.manifestVersion).toBe(1)
-    expect(pkg.vsidianAddon.api).toBe('^1.0.0')
+    // 钉值随 re-vendor 台账升级（ADR-0001）：首次显式 re-vendor 对齐上游
+    // 发行版 API 1.1.0（2026-10-16 released，candidate 1.0.0 面全量转正）
+    expect(pkg.vsidianAddon.api).toBe('^1.1.0')
     // 首期两块能力（粘贴还原 bridge#2 / 主题 bridge#3）全在稳定候选面；
     // experimental 声明宿主未提供的入口名会使整个组件判不兼容
     // （experimental-unsupported），保守清单是零 experimental 表。后续票
@@ -69,7 +71,7 @@ describe('manifest 契约（vsidianAddon 清单与依赖锁定）', () => {
   })
 })
 
-describe('vendor SDK 类型快照纪律（锚定 vsidian@301d2c16）', () => {
+describe('vendor SDK 类型快照纪律（锚定 vsidian@80dfc285，API 1.1.0 发行）', () => {
   const vendorFiles = listFiles('types/vendor').filter((f) => f.endsWith('.ts'))
 
   it('快照在场且非空，含本仓直接消费面（粘贴规则 + 主题）', () => {
@@ -99,8 +101,9 @@ describe('vendor SDK 类型快照纪律（锚定 vsidian@301d2c16）', () => {
     const anchor = script.match(/DEFAULT_COMMIT = '([0-9a-f]{40})'/)
     expect(anchor, '脚本缺 40 位 DEFAULT_COMMIT 锚定').not.toBeNull()
     const commit = anchor![1]
-    // 锚定 batch-2 合入点（PR #564，含 #530 粘贴 + #546/T07 主题 API 面）
-    expect(commit).toBe('301d2c162a25f1e34c90cb54f74a26cdc2fbee7e')
+    // 锚定 API 1.1.0 发行提交（上游 2026-10-16 released；candidate 锚
+    // 301d2c16 的 1.0.0 面全量并入、无破坏性变更，re-vendor 台账见 ADR-0001）
+    expect(commit).toBe('80dfc285223e66b3b80535fd7f16b0df04ee8ded')
     for (const rel of vendorFiles) {
       const head = readFileSync(path.join(repoRoot, rel), 'utf8').split('\n')[0]
       expect(head, `${rel} 头注与 DEFAULT_COMMIT 不一致`).toContain(`vsidian@${commit} — `)

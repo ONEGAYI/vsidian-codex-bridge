@@ -30,7 +30,7 @@
 - 发布形态：推 `v*` 标签自动创建 GitHub Release 附 VSIX；Marketplace 发布为可选双开关（`VSCE_PAT` 密钥 + `MARKETPLACE_PUBLISH` 变量），从 Release 下载同一份 VSIX 发布——两渠道同一份字节。
 - VSIX 打包带内容红线：必需清单（dist 三产物 + mermaid 分块非空）、禁止模式与白名单双保险、体积双线阈值、解包 manifest 冒烟。
 - CI（push / PR）：构建 + 类型检查 + 单元契约测试 + vendor 类型快照防漂移 + VSIX 打包上传。
-- vendor SDK 类型快照锚定 vsidian@`301d2c16`，升级走显式 re-vendor（不追逐 main）。
+- vendor SDK 类型快照锚定 vsidian@`80dfc285`（附加组件 API 1.1.0 发行提交）——首次发布即对齐发行版 API 1.1.0（api 声明 `^1.1.0`，candidate 1.0.0 面全量转正无破坏性变更），升级走显式 re-vendor（不追逐 main）。
 - 真宿主安装验证走静默通道：独立桌面内起 VSCode 1.82.3（engines 下界），四层断言（激活 / 主题候选 / 组件渲染选路 / 停用回落），宿主窗口不出现在用户桌面。
 
 ### 已知限制
