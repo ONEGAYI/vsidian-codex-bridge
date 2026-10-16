@@ -36,7 +36,8 @@
     "vendor:sdk": "node scripts/vendorSdkTypes.mjs",
     "vendor:check": "node scripts/vendorSdkTypes.mjs --check",
     "package": "npm run compile && node scripts/release.mjs package",
-    "vscode:prepublish": "npm run build"
+    "vscode:prepublish": "npm run build",
+    "test:host": "node test/host/run.mjs"
   },
   "devDependencies": {
     "@codemirror/language": "6.12.4",
