@@ -16,10 +16,9 @@ describe('Codex 主题元数据（单一事实源）', () => {
     expect(CODEX_THEME_DECLARATION.themeId).toBe('codex')
     expect(CODEX_THEME_DECLARATION.rendererId).toBe(CODEX_RENDERER_ID)
     expect(CODEX_THEME_DECLARATION.languages).toEqual(['mermaid'])
-    // label 多语言映射（渲染时按页面语言选值；直值或多语言映射均可）
-    const label = CODEX_THEME_DECLARATION.label as Record<string, string>
-    expect(label['zh-cn']).toBeTruthy()
-    expect(label.en).toBeTruthy()
+    // label 为直值或多语言映射（平台语义）；显示名对齐内核内置 Codex
+    // 主题的 i18n 文案（'Codex'，中英同名）
+    expect(CODEX_THEME_DECLARATION.label).toBe('Codex')
   })
 
   it('平台组合身份：themeRef = `${addonId}/${themeId}` 与内置保留值不冲突', () => {
