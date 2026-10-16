@@ -1,0 +1,94 @@
+# 发布工作流：推送 v* 标签触发。scripts/release.mjs 的 release 子命令负责
+# 校验 HEAD 精确命中 v<version> 标签、提取 CHANGELOG 最新版本段、打包 VSIX
+# 并做包内容/体积红线检查（失败即中止），随后创建 GitHub Release 附带该
+# VSIX——release 与 Marketplace 发布的是同一份字节。形态照搬上游 vsidian
+# 主仓 release.yml，适配点见各步注释（发布前复验换本仓对应物 vendor:check；
+# Marketplace 双开关显式代码化进 job if——上游仅存于注释语义）。
+#
+# Marketplace 发布为可选 job，两道开关都配置后才会执行：
+#   1. Settings → Secrets and variables → Actions → Secrets → VSCE_PAT
+#      （Azure DevOps PAT，Organization 选 All accessible organizations，
+#       Scope 选 Marketplace → Manage）
+#   2. Settings → Secrets and variables → Actions → Variables → MARKETPLACE_PUBLISH = true
+# 配置完成前，推 tag 只产出 GitHub Release，不影响市场。
+#
+# workflow_dispatch 用于补跑：Release 已存在但 marketplace job 失败时，填标签
+# 名手动重发，无需重推 tag——release job 只在真实 tag 推送时执行，dispatch
+# 只跑 marketplace。
+#
+# 踩坑记录：给已注册的 workflow 新增触发器后，GitHub 注册实体可能滞留旧解析
+# （dispatch 报 422 "does not have trigger"）；对文件做任意字节变更推送到
+# 默认分支可强制重解析。本注释即为此保留。
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布到 Marketplace 的 Release 标签（如 v0.1.0）'
+        required: true
+
+jobs:
+  release:
+    name: release
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # release 子命令校验 HEAD 精确命中 v<version> 标签，需完整历史与
+          # 标签（本仓适配注：上游的契约复验基线交叉验证不在本仓范围，
+          # 完整检出的必要性以标签校验为下界）
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: 安装依赖
+        run: npm ci
+      - name: 拉取 vsidian 源仓（vendor 快照锚定对象）
+        # 发布前复验（本仓对应上游契约复验链的物是 vendor 快照防漂移）：
+        # --filter=blob:none 同 ci.yml——commit/tree 随 clone 到场，blob 由
+        # git show 按需取；锚定 commit 不可达必须失败而非降级（fail-closed）
+        run: git clone --filter=blob:none https://github.com/ONEGAYI/vsidian.git /tmp/vsidian
+      - name: 发布前复验：vendor 快照防漂移检查
+        # 失败即 job 失败，不打包不产出 Release——类型面被篡改的提交不允许发布
+        run: npm run vendor:check
+        env:
+          VSIDIAN_SOURCE_REPO: /tmp/vsidian
+      - name: 打包、检查并创建 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: npm run release
+
+  marketplace:
+    name: marketplace
+    needs: release
+    # push 场景等 release 成功；dispatch 补跑场景 release 被跳过（skipped），
+    # 直接对指定标签的既有 Release 发布。注意 job 级 if 隐式带 success() &&
+    # 前缀——上游 skipped 时会把整个条件判 false，故须以 !cancelled() 显式豁免。
+    # 双开关（本仓将上游注释声明的语义显式代码化）：variable
+    # MARKETPLACE_PUBLISH 为 'true' 且 secret VSCE_PAT 已配置才进入——缺任一
+    # 开关时 job 直接跳过（skipped，不标红），推 tag 只产出 GitHub Release。
+    if: ${{ !cancelled() && vars.MARKETPLACE_PUBLISH == 'true' && secrets.VSCE_PAT != '' && ((github.event_name == 'push' && needs.release.result == 'success') || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      # 本 job 不 checkout（无 git 上下文），gh 必须以 -R 显式指定仓库
+      - name: 从 Release 下载 VSIX
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "${{ inputs.tag || github.ref_name }}" --pattern '*.vsix' -R "$GITHUB_REPOSITORY"
+      - name: 发布到 VSCode Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx --yes @vscode/vsce publish --no-dependencies --packagePath ./*.vsix
