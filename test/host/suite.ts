@@ -5,8 +5,10 @@
 // 构建产物，API 1.1.0 发行）与本组件 dist 产物，断言四层：
 //   1. 组件激活无错（extensionDependencies 联动 + registerAddon 成功）；
 //   2. 主题目录出现 Codex 候选（设置「外观 → 主题」的数据源）；
-//   3. 选择后 mermaid 渲染走组件（平台 paint 探针：provider 身份 + 几何
-//      + 内置 SVG 零在场——esm 分块在 webview CSP 下真实装载的证明）；
+//   3. 选择后 mermaid 渲染走组件（平台 paint 探针：provider 身份 + 容器
+//      内 SVG 在场〔builtinSvg>=1〕——esm 分块在 webview CSP 下真实装载
+//      的证明。width/builtinSvg===0 形态因 vsidian 探针语义缺陷暂不可用，
+//      见断言③处注释）；
 //   4. 停用组件回落内置 default 且保留首选（降级底线）。
 // 观测全部经 vsidian 的 _test.* 测试钩子命令（VSIDIAN_TEST_HOOKS=1 会话
 // 注册，形态与上游 test/integration/suite/addonThemeCases.ts 同源）——
