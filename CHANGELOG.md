@@ -4,9 +4,16 @@
 
 ## Unreleased - 开发中
 
+（暂无）
+
+## [0.1.1] - 2026-10-21
+
+修复版：解除 Codex 主题选中后 Mermaid 图恒不可用的装载阻断，宿主套件断言面同步修复（评审轮发现旧断言只在渲染失败时可通过）。
+
 ### 修复
 
 - 修复选中 Codex 主题后所有 Mermaid 图恒显示「Mermaid 运行时不可用」的问题：编辑器页登记此前缺少资源基址（`resources`），平台不提供 `resourceUri`、mermaid 独立产物无法装载；现以产物所在目录 `dist/` 为基址登记（与入口所在目录重合，资源许可面零扩大），装载链恢复（#7）。
+- 宿主验证套件的接管断言在「组件真渲染出 SVG」场景恒假、在「渲染失败错误占位」场景反而通过（假绿）——已适配为可区分形态；根因是 Vsidian 侧 `paint.renderers` 探针两处语义缺陷（`builtinSvg` 误计组件 SVG、`width` 代表元素落到 `display:none` 节点），已开票 vsidian#629 跟踪，平台修复后断言回到原形态（#7）。
 
 ## [0.1.0] - 2026-10-16
 
@@ -42,5 +49,6 @@
 - Marketplace 图标未设置：本仓暂无图标资产，Marketplace 页面使用默认占位（决策见 ADR-0004）。
 
 <!-- 变更链接
+0.1.1: https://github.com/ONEGAYI/vsidian-codex-bridge/compare/v0.1.0...v0.1.1
 0.1.0: https://github.com/ONEGAYI/vsidian-codex-bridge/commits/v0.1.0
 -->
