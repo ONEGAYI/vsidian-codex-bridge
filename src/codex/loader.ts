@@ -11,8 +11,9 @@
 // script；调用方降级为错误态展示源码）。
 import type { CodexMermaidApi } from './runtime'
 
-/** 独立产物在组件安装目录内的路径（resourceUri 输入） */
-export const MERMAID_BUNDLE_PATH = 'dist/mermaid.js'
+/** 独立产物相对 resourceUri 基址的路径（resourceUri 输入）；目录归
+ *  host-enable 登记的基址（dist/），此处只写文件名 */
+export const MERMAID_BUNDLE_PATH = 'mermaid.js'
 
 type GlobalWithCodex = typeof globalThis & { __vsidianCodexMermaid?: unknown }
 

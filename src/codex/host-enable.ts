@@ -7,8 +7,12 @@ import { ADDON_ID, CODEX_THEME_DECLARATION } from './meta'
 /** enable 装配：编辑器页入口 + Codex 主题元数据登记 */
 export function codexEnable(enableCtx: AddonEnableContext): void {
   // 编辑器页入口：dist/editor.js（IIFE）装载 Codex 渲染提供者
-  // （sdk.renderers.register + themeEnvironment 订阅，见 page-editor.ts）
-  enableCtx.pages.registerEditor({ entry: 'dist/editor.js' })
+  // （sdk.renderers.register + themeEnvironment 订阅，见 page-editor.ts）。
+  // resources 以 dist/ 为 resourceUri 基址——缺此登记则 sdk.resourceUri
+  // 恒 null，mermaid 独立产物无法装载、渲染恒降级「Mermaid 运行时不可用」
+  // （issue #7）。基址收在产物所在目录：与入口所在目录重合，资源许可面
+  // 零扩大；目录归基址，loader 常量只写文件名（mermaid.js）
+  enableCtx.pages.registerEditor({ entry: 'dist/editor.js', resources: ['dist'] })
   // Codex 主题元数据登记（enable 注册按 addonId 整组替换；目录只增
   // 候选不自动切换——用户在「外观 → 主题」显式选择后生效）。普通 API
   // 拒绝（invalid-theme/duplicate-theme）不算组件故障：开发者日志留痕
