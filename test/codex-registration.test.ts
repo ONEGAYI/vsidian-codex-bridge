@@ -52,21 +52,22 @@ describe('宿主 enable：themes.register 登记', () => {
     codexEnable(ctx as never)
     // resources 是 mermaid 独立产物的装载前提：平台只在登记了资源子目录时
     // 才提供 resourceUri（首个子目录作基址）——缺登记则 loader 恒 null，
-    // 渲染恒降级「Mermaid 运行时不可用」（issue #7）。loader 请求的是带
-    // dist/ 前缀的相对路径，基址须为安装目录根（'.'）
-    expect(ctx.pages.registerEditor).toHaveBeenCalledWith({ entry: 'dist/editor.js', resources: ['.'] })
+    // 渲染恒降级「Mermaid 运行时不可用」（issue #7）。基址收在 dist/
+    // （产物所在目录）：与入口所在目录重合，资源许可面零扩大；api-reference
+    // 对 resources 的口径是「资源子目录」，根目录 '.' 不符措辞且扩面
+    expect(ctx.pages.registerEditor).toHaveBeenCalledWith({ entry: 'dist/editor.js', resources: ['dist'] })
     expect(ctx.themes.register).toHaveBeenCalledTimes(1)
     expect(ctx.themes.register).toHaveBeenCalledWith([CODEX_THEME_DECLARATION])
   })
 
-  it('resources 基址与 loader 请求路径配套：基址为安装根、产物在 dist/ 下', () => {
+  it('resources 基址与 loader 请求路径配套：基址负责目录、常量只写文件名', () => {
     const ctx = mockEnableCtx()
     codexEnable(ctx as never)
     const input = ctx.pages.registerEditor.mock.calls[0]![0] as { resources?: readonly string[] }
-    expect(input.resources?.[0]).toBe('.')
+    expect(input.resources?.[0]).toBe('dist')
     // 两个事实源不脱节：host-enable 的基址登记 vs loader 的 MERMAID_BUNDLE_PATH——
-    // 平台拼接语义为 `${resourceBase}/${relativePath}`，产物落在 <安装目录>/dist/ 内
-    expect(MERMAID_BUNDLE_PATH.startsWith('dist/')).toBe(true)
+    // 平台拼接语义为 `${resourceBase}/${relativePath}`，目录归基址、文件名归常量
+    expect(MERMAID_BUNDLE_PATH).toBe('mermaid.js')
   })
 
   it('themes.register 普通拒绝（invalid-theme 等）不抛——不算组件故障', () => {
