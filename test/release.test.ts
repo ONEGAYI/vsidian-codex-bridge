@@ -307,16 +307,21 @@ describe('extractLatestChangelog（CHANGELOG 最新版本段提取，Release not
     expect(() => extractLatestChangelog('# Changelog\n\n只有说明', '0.1.0')).toThrow(/未找到/)
   })
 
-  it('仓库 CHANGELOG.md 在场且 0.1.0 段可被解析（真实文件契约）', () => {
+  it('仓库 CHANGELOG.md 在场且最新版本段可被解析（真实文件契约）', () => {
     const file = path.join(repoRoot, 'CHANGELOG.md')
     expect(existsSync(file), 'CHANGELOG.md 缺失').toBe(true)
     const pkg = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as { version: string }
-    const section = extractLatestChangelog(readFileSync(file, 'utf8'), pkg.version)
-    expect(section.date, '0.1.0 段应带日期').toBe('2026-10-16')
+    const text = readFileSync(file, 'utf8')
+    const section = extractLatestChangelog(text, pkg.version)
+    // 不钉具体日期/版本值——真实文件契约随发版轮替，钉值会在下一次
+    // 发版提交上踩红（0.1.1 发版即如此）；此处只钉形态：带 ISO 日期、
+    // 段体非空，版本与 package.json 一致由 extractLatestChangelog 自身
+    // 校验（不一致抛错，见上方用例）
+    expect(section.date, '最新版本段应带日期').toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(section.body.length).toBeGreaterThan(0)
-    // 首版三大主题组在场（发布说明的主干）
+    // 首版三大主题组仍在册（发布说明的主干，历史内容不随版本段轮替丢失）
     for (const topic of ['粘贴还原', 'Mermaid Codex 主题', '工程与发布基建']) {
-      expect(section.body, `主题组「${topic}」应在场`).toContain(topic)
+      expect(text, `主题组「${topic}」应在场`).toContain(topic)
     }
   })
 })
