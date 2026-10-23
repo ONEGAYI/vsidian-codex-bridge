@@ -52,6 +52,14 @@ function resolveHostRoot(args) {
     fail(`${root} 的 out/extension.js 不含 _test.addonThemes——宿主产物早于 batch-2（主题注册 API 面 2026-10-16 随 PR #564 合入），请用 80dfc285（API 1.1.0 发行）或更新构建`)
     return null
   }
+  // 自检 #629 探针分桶修复在场：套件断言③消费 renderers.addonSvg（组件
+  // SVG 在场数），早于 c1ae8410 的宿主产物无该字段——接管断言会 60s 超时
+  // 假红，提前给出可行动报错（发布时序：该修复随 vsidian v1.4.0 之后版本
+  // 发行，本套件只对含修复的构建运行）
+  if (!hostBundle.includes('addonSvg')) {
+    fail(`${root} 的 out/extension.js 不含 addonSvg——宿主产物早于 #629 探针分桶修复（vsidian PR #644，merge c1ae8410，随 v1.4.0 之后版本发行）。套件「组件渲染器接管」断言依赖 renderers.addonSvg，请用含该修复的构建`)
+    return null
+  }
   return root
 }
 

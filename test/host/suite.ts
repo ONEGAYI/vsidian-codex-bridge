@@ -1,22 +1,23 @@
 // 真宿主安装验证套件（票 #4 宿主测试基建层，衔接 #3 遗留项）：在下界
 // 宿主 VSCode 1.82.3 的扩展宿主内运行（由 test/host/run.mjs 经
 // --extensionTestsPath 装载，经 silentHost.mjs 独立桌面静默启动），以
-// extensionDevelopmentPath 模式同时装载 vsidian 宿主（vsidian@80dfc285
-// 构建产物，API 1.1.0 发行）与本组件 dist 产物，断言四层：
+// extensionDevelopmentPath 模式同时装载 vsidian 宿主（API 1.1.0 发行；
+// 探针断言③依赖 #629 分桶修复〔c1ae8410〕，入口自检在场）与本组件
+// dist 产物，断言四层：
 //   1. 组件激活无错（extensionDependencies 联动 + registerAddon 成功）；
 //   2. 主题目录出现 Codex 候选（设置「外观 → 主题」的数据源）；
-//   3. 选择后 mermaid 渲染走组件（平台 paint 探针：provider 身份 + 容器
-//      内 SVG 在场〔builtinSvg>=1〕——esm 分块在 webview CSP 下真实装载
-//      的证明。width/builtinSvg===0 形态因 vsidian 探针语义缺陷暂不可用，
-//      见断言③处注释）；
+//   3. 选择后 mermaid 渲染走组件（平台 paint 探针：provider 身份 + 组件
+//      SVG 在场〔addonSvg>=1〕+ width>0 真实几何 + builtinSvg===0 内置
+//      未接管——esm 分块在 webview CSP 下真实装载的端到端证明）；
 //   4. 停用组件回落内置 default 且保留首选（降级底线）。
 // 观测全部经 vsidian 的 _test.* 测试钩子命令（VSIDIAN_TEST_HOOKS=1 会话
 // 注册，形态与上游 test/integration/suite/addonThemeCases.ts 同源）——
 // 不访问 vsidian 内部对象。绘制断言消费生产 view.state.paint 探针。
 // 组织方式为极简自研 runner（不引 mocha）：失败汇总后抛错使宿主以非零
-// 码退出。暗色填充/私有全局名在宿主侧无观测面（paint 探针 color 对 SVG
-// 叶子元素恒透明、webview 全局不可从扩展宿主读取），色板证据由浏览器层
-// 冒烟承载（ADR-0003）——README 手动验证清单含这两处人工证据点。
+// 码退出。#629 后探针代表元素命中 svg 本体：width 为真实几何、color 为
+// 其计算背景色（宿主层日志可直接观测 Codex 画布底色，暗色 #181818）；
+// 私有全局名在宿主侧仍无观测面，色板细节证据由浏览器层冒烟承载
+// （ADR-0003）——README 手动验证清单含人工证据点。
 import * as vscode from 'vscode'
 import { ADDON_ID, CODEX_RENDERER_ID } from '../../src/codex/meta'
 
@@ -42,6 +43,9 @@ interface PaintContainer {
 interface Paint {
   containers: PaintContainer[]
   builtinSvg: number
+  /** 组件接管容器内 SVG 在场数（vsidian #629 起提供：真渲染 >=1，
+   *  error 占位/纯文本为 0——渲染成败的可区分信号） */
+  addonSvg: number
 }
 
 const state = () => vscode.commands.executeCommand<ThemeState>(`${PREFIX}addonThemes`)
@@ -144,29 +148,28 @@ const CASES: Array<[string, () => Promise<void>]> = [
       await vscode.commands.executeCommand('vscode.openWith', uri, 'onegayi.vsidian.editor')
       // ---- 断言层 ③：容器真实绘制走组件 ----
       // provider 是平台写在图形容器上的生效提供者标记（${PROVIDER_ID}）。
-      // 绘制证据取 builtinSvg>=1（容器内有 SVG）：vsidian 探针（#358）的
-      // builtinSvg 统计 `.vsidian-mermaid svg`，而热切换重挂载的容器无论
-      // 内置/组件接管一律挂 .vsidian-mermaid 类（vsidian graphicRenderers
-      // remountGraphicContainer）——组件 SVG 亦被计数；width 的探针 fallback
-      // 落 SVG 内嵌 <style>（display:none，rect 恒 0），真渲染场景不可用。
-      // 在「接管必经重挂载、内置旧容器退场」的前提下，builtinSvg>=1 即
-      // 组件 SVG 在场的绘制证据；装载失败（error 占位无 svg）恒 0——
-      // 两态可区分，本断言即装载链（resourceUri + module script + CSP
-      // 放行）的端到端证明（ADR-0003 未尽项在此闭环）。待 vsidian 探针
-      // 语义修复后回到 width>0 && builtinSvg===0 形态
+      // 探针语义按 vsidian #629（c1ae8410）分桶修正后回原为三条件合成：
+      //   width>0——代表元素命中 svg 本体，真实布局几何（#629 前 fallback
+      //     落内嵌 <style>〔display:none〕恒 0）；
+      //   addonSvg>=1——组件接管容器内 SVG 在场，error 占位/纯文本恒 0，
+      //     渲染成败可区分（#629 前组件 SVG 被误计入 builtinSvg）；
+      //   builtinSvg===0——内置管线未接管。
+      // 三条件即装载链（resourceUri + module script + CSP 放行）的端到端
+      // 证明（ADR-0003 未尽项在此闭环）。临时形态（41f531b 借误计的
+      // builtinSvg>=1 反证 SVG 在场）随平台修复落地而退役。
       const rendered = await waitProbe('组件渲染器接管 mermaid 容器', async () => {
         const current = await paint(uri)
         if (!current) return undefined
         const hit = current.containers.find((item) => item.language === 'mermaid'
-          && item.provider === PROVIDER_ID)
-        return hit && current.builtinSvg >= 1 ? { hit, current } : undefined
+          && item.provider === PROVIDER_ID && item.width > 0)
+        return hit && current.addonSvg >= 1 && current.builtinSvg === 0 ? { hit, current } : undefined
       }, async () => {
         const current = await paint(uri)
         const directory = await state()
-        return { containers: current?.containers, builtinSvg: current?.builtinSvg, mermaidEffective: directory?.table.languages.find((entry) => entry.language === 'mermaid')?.effective, preferred: directory?.preferred }
+        return { containers: current?.containers, builtinSvg: current?.builtinSvg, addonSvg: current?.addonSvg, mermaidEffective: directory?.table.languages.find((entry) => entry.language === 'mermaid')?.effective, preferred: directory?.preferred }
       })
-      console.log(`[宿主验证] 容器 provider=${rendered.hit.provider} width=${rendered.hit.width.toFixed(0)} builtinSvg=${rendered.current.builtinSvg}`)
-      console.log(`[宿主验证] 容器观测 state=${JSON.stringify(rendered.hit.state)} color=${JSON.stringify(rendered.hit.color)}（color 对 SVG 叶子恒透明，色板证据见浏览器层冒烟与手动清单）`)
+      console.log(`[宿主验证] 容器 provider=${rendered.hit.provider} width=${rendered.hit.width.toFixed(0)} addonSvg=${rendered.current.addonSvg} builtinSvg=${rendered.current.builtinSvg}`)
+      console.log(`[宿主验证] 容器观测 state=${JSON.stringify(rendered.hit.state)} color=${JSON.stringify(rendered.hit.color)}（color 为 svg 计算背景色即 Codex 画布底色，暗色 #181818 在宿主层直接可见）`)
       console.log(`[宿主验证] 全容器=${JSON.stringify(rendered.current.containers.map((c) => ({ language: c.language, provider: c.provider, width: c.width })))}`)
       // ---- 断言层 ④：停用回落内置 default 且保留主题首选 ----
       // 平台开关停用：运行期注册撤回（组件 enable 生命周期结束），主题
